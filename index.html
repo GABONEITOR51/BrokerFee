@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Broker Disclosure · Oxnard Insurance Agency</title>
+<style>
+  :root{ --fs:10px; --lh:1.3; }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    background:#e9e9e9;color:#000;
+    font-family:"Times New Roman",Times,serif;
+    font-size:var(--fs);
+    -webkit-print-color-adjust:exact;print-color-adjust:exact;
+  }
+  .sheet{
+    width:100%;max-width:8.5in;
+    margin:14px auto;background:#fff;
+    padding:0.4in 0.45in;
+    box-shadow:0 2px 10px rgba(0,0,0,.15);
+  }
+  h1{
+    font-size:12.5px;text-align:center;text-transform:uppercase;
+    font-weight:bold;margin:0 0 4px;padding-bottom:2px;
+    border-bottom:1px solid #000;
+  }
+  h1.mt{margin-top:13px}
+  p{margin:0 0 4px;line-height:var(--lh);text-align:justify}
+  ol{margin:0;padding:0;list-style:none}
+  ol li{margin:0 0 3px;line-height:var(--lh);text-align:justify}
+
+  .client{margin:3px 0 4px}
+  .client span{margin-right:20px;white-space:nowrap}
+
+  .f{
+    display:inline-block;min-width:110px;padding:0 4px;
+    border-bottom:1px solid #000;text-align:center;line-height:1.05;
+  }
+  .f.w{min-width:210px}
+  .f.s{min-width:70px}
+  .f.empty{color:transparent}
+
+  .initials{margin:6px 0 0}
+
+  /* firmas */
+  .sign{display:grid;grid-template-columns:1.5fr 1fr;gap:26px;margin-top:18px}
+  .sign .ln{border-bottom:1px solid #000;height:19px;position:relative}
+  .sign .lb{font-size:9px;margin-top:2px}
+  /* firma dibujada: se apoya sobre la línea, sin empujar el maquetado */
+  .sign .ln img{
+    position:absolute;left:10px;bottom:1px;
+    max-height:34px;max-width:70%;object-fit:contain;
+  }
+  .sign .ln .typed{
+    position:absolute;left:10px;bottom:2px;font-size:13px;
+  }
+
+  .print-btn{
+    position:fixed;right:18px;bottom:18px;z-index:9;
+    background:#333;color:#fff;border:none;border-radius:4px;
+    padding:9px 18px;font:13px sans-serif;cursor:pointer;
+  }
+
+  @page{size:letter portrait;margin:0.4in}
+  @media print{
+    body{background:#fff}
+    .sheet{margin:0;box-shadow:none;width:100%;padding:0}
+    .print-btn{display:none}
+    li,.sign{break-inside:avoid}
+  }
+</style>
+</head>
+<body>
+<div id="doc"></div>
+<button class="print-btn" onclick="window.print()">Print</button>
+<script>
+/* =====================================================================
+   CONTRATO DE DATOS · AppSheet · tabla CLIENTES
+   URL:  broker-disclosure.html?p=1#d=<ENCODEURL(payload)>
+   payload = 8 campos separados por  ^  (acento circunflejo)
+
+     0  cliente        [completo]                        (requerido)
+     1  fecha          [Poliza_Inicio]  ->  Date         (requerido)
+                       Llega MM/DD/YYYY o YYYY-MM-DD y se imprime  Ago/27/2026
+     2  firmaURL       URL pública de la imagen [Firma]  (opcional)
+     3  feeInicial     Broker fee inicial  · Disclosure punto 3    (opcional)
+     4  feeBroker      Broker fee acuerdo  · Fee Agreement punto 5 (opcional)
+     5  servicioAdic   Servicio adicional  · punto 6               (opcional)
+     6  montoAdic      Monto adicional     · punto 6               (opcional)
+     7  feeTerceros    Fees de terceros    · punto 7               (opcional)
+
+   Todo campo vacío se imprime como línea en blanco para llenar a mano.
+   La licencia CDI 0F74214 va fija en el HTML (constante LICENCIA).
+
+   ?p=1  -> abre e imprime automáticamente
+   ?dbg=1 -> muestra el diagnóstico de los campos recibidos
+   ===================================================================== */
+const LICENCIA = "0F74214";
+const F='^';
+const DEMO = ["","","","","","","",""];
+
+function smartDecode(raw){
+  let s=raw;
+  try{ s=decodeURIComponent(raw); }catch(e){ s=raw; }
+  /* Segundo decode SOLO si el primero no reveló el separador (doble encode).
+     Si ya hay "^" no se vuelve a decodificar: así el %2F del nombre de archivo
+     de la firma llega intacto al servidor de AppSheet. */
+  if(s.indexOf(F)===-1 && /%[0-9A-Fa-f]{2}/.test(s)){
+    try{ s=decodeURIComponent(s); }catch(e){}
+  }
+  return s;
+}
+function readPayload(){
+  let raw="";
+  const h=location.hash||"";
+  if(h.indexOf("#d=")===0) raw=h.slice(3);
+  else if(new URLSearchParams(location.search).get("d")) raw=new URLSearchParams(location.search).get("d");
+  if(!raw) return null;
+  return smartDecode(raw).split(F);
+}
+function esc(s){return (s==null?"":""+s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c]));}
+function fld(v,cls){
+  const s=(v==null?"":""+v).trim();
+  return '<span class="f '+(cls||"")+(s?"":" empty")+'">'+(s?esc(s):"&nbsp;")+'</span>';
+}
+function money(v){
+  const s=(v==null?"":""+v).trim();
+  if(!s) return "";
+  const n=parseFloat(s.replace(/[^0-9.\-]/g,""));
+  if(isNaN(n)) return s;
+  return n.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
+}
+/* Fecha -> Ago/27/2026  (mes abreviado en español).
+   Acepta lo que manda AppSheet: MM/DD/YYYY (locale US) o YYYY-MM-DD (ISO).
+   Si no reconoce el formato devuelve el texto tal cual, sin inventar nada. */
+const MESES=["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
+function fechaFmt(v){
+  const s=(v==null?"":""+v).trim();
+  if(!s) return "";
+  let y,m,d,mm;
+  if((mm=s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/)))      { y=+mm[1]; m=+mm[2]; d=+mm[3]; }
+  else if((mm=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/))){ m=+mm[1]; d=+mm[2]; y=+mm[3]; }
+  else return s;
+  if(m<1||m>12||d<1||d>31) return s;
+  return MESES[m-1]+"/"+(d<10?"0"+d:d)+"/"+y;
+}
+/* imagen de la firma; si no carga, desaparece y queda la línea en blanco */
+function sigImg(url){
+  const u=(url==null?"":""+url).trim();
+  if(!u) return "";
+  return '<img src="'+esc(u)+'" alt="" onerror="this.style.display=\'none\'">';
+}
+
+function render(D){
+  const g=i=>D[i]!==undefined?D[i]:"";
+  const cliente=g(0), fecha=fechaFmt(g(1)), firma=g(2);
+
+  /* la firma y la fecha se repiten en los dos bloques, como en el original */
+  const signBlock =
+  '<div class="sign">'+
+    '<div><div class="ln">'+sigImg(firma)+'</div><div class="lb">Client Signature</div></div>'+
+    '<div><div class="ln">'+(fecha?'<span class="typed">'+esc(fecha)+'</span>':'')+'</div>'+
+      '<div class="lb">Date</div></div>'+
+  '</div>'+
+  '<div class="sign">'+
+    '<div><div class="ln"></div><div class="lb">Broker/Agent</div></div>'+
+    '<div><div class="ln">'+(fecha?'<span class="typed">'+esc(fecha)+'</span>':'')+'</div>'+
+      '<div class="lb">Date</div></div>'+
+  '</div>';
+
+  const disc=[
+    ["I-","Do not sign any broker fee agreement unless all of its blank lines and spaces have been filled-in and you have read this entire document and the agreement carefully."],
+    ["II-","Your insurance broker represents you, the consumer, and is entitled to charge a broker fee if he/she chooses. This fee is not set by law, and may be negotiable between you and the broker."],
+    ["III-","It is illegal or improper for an insurance broker to charge you a fee for placing coverage solely with the California Automobile Assigned Risk Plan or the California FAIR Plan. Fees may be charged for placement of other coverages."],
+    ["IV-","Broker fees are often non-refundable even if you cancel your coverage. Refer to your broker fee agreement to see if your broker fee is non-refundable. However, you may be entitled to a full refund of a broker fee if your broker acted incompetently or dishonestly. Unresolved disputes over non-refunded broker fees can be forwarded to the Department of Insurance for review."],
+    ["V-","You are entitled to obtain and keep a completed copy of this disclosure and any broker fee agreement you sign."],
+    ["VI-","Your broker may receive commission from insurance company(ies) for placing your insurance. This commission may be paid to your broker by the insurance company(ies) in addition to any broker fee you pay."],
+    ["VII-","If you will be paying your premium in installments to a finance company, by law you must receive a copy of a premium finance disclosure and agreement. Be sure to obtain and read those documents before signing a premium finance agreement. Also, ask the broker if the insurer offers its own installment payment plan. Insurer installment plans are often cheaper than premium financing through a separate premium finance company."],
+    ["VIII-","If your broker is placing automobile coverage, your broker must provide you with a copy of the current Department of Insurance pamphlet Automobile Insurance. If your broker is placing residential coverage, your broker must provide you with a copy of the current Department of Insurance pamphlet Residential Insurance. By signing this disclosure you acknowledge receipt of the appropriate pamphlet(s)."]
+  ].map(d=>'<li>'+d[0]+' '+d[1]+'</li>').join("");
+
+  document.getElementById("doc").innerHTML =
+  '<div class="sheet">'+
+
+    '<h1>Disclosure of Broker Status</h1>'+
+    '<div class="client">'+
+      '<span><b>Client:</b> '+fld(cliente,"w")+'</span>'+
+      '<span><b>Date:</b> '+fld(fecha,"s")+'</span>'+
+    '</div>'+
+    '<p>OXNARD INSURANCE AGENCY, pursuant to the requirements of California Insurance Code Section 1623, '+
+      'hereby discloses to the undersigned Client that:</p>'+
+    '<ol>'+
+      '<li>1. OXNARD INSURANCE AGENCY is transacting insurance on behalf of the client.</li>'+
+      '<li>2. OXNARD INSURANCE AGENCY will make a reasonable search of the marketplace of insurers known to '+
+        'Oxnard Insurance Agency to insure the type of risk that insurer wishes to insure, and to recommend '+
+        'one or more of such based on price, coverage, payment terms requested by client.</li>'+
+      '<li>3. The amount of broker fees that will be charged is $'+fld(money(g(3)),"s")+' initially, plus any '+
+        'additional services as may be required and agreed upon per the attached schedule or by further '+
+        'written agreement signed by Client.</li>'+
+      '<li>4. OXNARD INSURANCE AGENCY discloses that he/she/it may also receive compensation from the insurer '+
+        'selected by the customer, directly or indirectly, as a consequence of this transaction.</li>'+
+    '</ol>'+
+    signBlock+
+
+    '<h1 class="mt">Standard Broker Disclosure</h1>'+
+    '<p>This disclosure was prepared by the California Insurance Commissioner. Please READ IT CAREFULLY!</p>'+
+    '<ol>'+disc+'</ol>'+
+    '<div class="initials">Client initials: '+fld("","s")+'</div>'+
+
+    '<h1 class="mt">Standard Broker Fee Agreement</h1>'+
+    '<ol>'+
+      '<li>1. The parties to this agreement are '+fld(cliente,"w")+' and OXNARD INSURANCE AGENCY, California '+
+        'Department of Insurance License Number '+esc(LICENCIA)+' "BROKER".</li>'+
+      '<li>2. CLIENT appoints BROKER as CLIENT\'S insurance broker of record.</li>'+
+      '<li>3. This agreement shall become operative on '+fld(fecha,"s")+' and shall continue in full '+
+        'force and effect until terminated by either party.</li>'+
+      '<li>4. BROKER agrees to represent CLIENT honestly and competently.</li>'+
+      '<li>5. CLIENT agrees to pay BROKER a broker fee for BROKER\'S services. The broker fee is '+
+        '$'+fld(money(g(4))||money(g(3)),"s")+'. The broker fee IS NOT refundable.</li>'+
+      '<li>6. BROKER may in the future charge CLIENT, and CLIENT agrees to pay, additional fee(s) for the '+
+        'services listed below. The additional fees and services are: Service '+fld(g(5),"w")+' '+
+        'Amount $'+fld(money(g(6)),"s")+'</li>'+
+      '<li>7. Following are the nature and amount of all fees known to BROKER that will be charged by persons '+
+        'other than BROKER or the insurance company in connection with current placement of CLIENT\'s '+
+        'insurance: '+fld(g(7),"w")+'</li>'+
+    '</ol>'+
+    signBlock+
+  '</div>';
+}
+
+function showDebug(D){
+  if(new URLSearchParams(location.search).get("dbg")!=="1") return;
+  const N=["cliente","fecha","firmaURL","feeInicial","feeBroker","servicioAdic","montoAdic","feeTerceros"];
+  const box=document.createElement("pre");
+  box.style.cssText="white-space:pre-wrap;word-break:break-all;font:11px/1.4 monospace;"+
+    "background:#222;color:#ddd;padding:12px;margin:14px auto;max-width:8.5in;overflow:auto";
+  box.textContent="DIAGNOSTICO\nCampos recibidos: "+(D?D.length:0)+" (se esperan 8)\nSeparador: ^\n\n"+
+    N.map((n,i)=>i+" "+n+": "+((D&&D[i])?D[i]:"·")).join("\n");
+  document.body.appendChild(box);
+}
+
+(function(){
+  const D=readPayload();
+  render(D||DEMO);
+  showDebug(D);
+  if(new URLSearchParams(location.search).get("p")==="1"){
+    /* espera a que cargue la firma antes de mandar a imprimir */
+    const img=document.querySelector(".sign .ln img");
+    const go=()=>setTimeout(()=>window.print(),300);
+    if(img && !img.complete){ img.onload=go; img.onerror=go; setTimeout(go,3000); }
+    else go();
+  }
+})();
+window.addEventListener("hashchange",()=>{const D=readPayload(); if(D) render(D);});
+</script>
+</body>
+</html>
