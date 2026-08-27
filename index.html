@@ -56,6 +56,16 @@
     position:absolute;left:10px;bottom:2px;font-size:13px;
   }
 
+  /* aviso solo en pantalla: nunca se imprime */
+  #sigwarn{
+    display:none;max-width:8.5in;margin:14px auto 0;
+    background:#FBEDE9;border-left:4px solid #8C2F1E;
+    padding:10px 14px;font:13px/1.45 "Segoe UI",Arial,sans-serif;color:#5c2116;
+  }
+  #sigwarn b{color:#8C2F1E}
+  #sigwarn code{font:11px/1.4 monospace;word-break:break-all;color:#333}
+  @media print{ #sigwarn{display:none !important} }
+
   .print-btn{
     position:fixed;right:18px;bottom:18px;z-index:9;
     background:#333;color:#fff;border:none;border-radius:4px;
@@ -66,13 +76,24 @@
   @media print{
     body{background:#fff}
     .sheet{margin:0;box-shadow:none;width:100%;padding:0}
-    .print-btn{display:none}
+    /* aviso solo en pantalla: nunca se imprime */
+  #sigwarn{
+    display:none;max-width:8.5in;margin:14px auto 0;
+    background:#FBEDE9;border-left:4px solid #8C2F1E;
+    padding:10px 14px;font:13px/1.45 "Segoe UI",Arial,sans-serif;color:#5c2116;
+  }
+  #sigwarn b{color:#8C2F1E}
+  #sigwarn code{font:11px/1.4 monospace;word-break:break-all;color:#333}
+  @media print{ #sigwarn{display:none !important} }
+
+  .print-btn{display:none}
     li,.sign{break-inside:avoid}
   }
 </style>
 </head>
 <body>
 <div id="doc"></div>
+<div id="sigwarn"></div>
 <button class="print-btn" onclick="window.print()">Print</button>
 <script>
 /* =====================================================================
@@ -145,16 +166,37 @@ function fechaFmt(v){
   if(m<1||m>12||d<1||d>31) return s;
   return MESES[m-1]+"/"+(d<10?"0"+d:d)+"/"+y;
 }
-/* imagen de la firma; si no carga, desaparece y queda la línea en blanco */
+/* Imagen de la firma.
+   Si no carga, se oculta (la línea queda en blanco para firmar a mano) y se
+   levanta un aviso EN PANTALLA — nunca en el papel — para que en el mostrador
+   se note el problema en lugar de imprimir un documento sin firma en silencio. */
+window.__sigURL = "";
+window.__sigOK  = null;   // null = no se intentó, true = cargó, false = falló
+function sigFail(img){
+  img.style.display='none';
+  window.__sigOK=false;
+  const w=document.getElementById('sigwarn');
+  if(w){
+    w.style.display='block';
+    w.innerHTML='<b>La firma no se pudo cargar.</b> El documento se imprimirá con la '+
+      'línea en blanco para firmar a mano. Causa típica: la URL exige sesión de AppSheet '+
+      'en este navegador (error 401/403).<br><code>'+esc(window.__sigURL)+'</code>';
+  }
+}
+function sigOK(){ window.__sigOK=true; }
 function sigImg(url){
   const u=(url==null?"":""+url).trim();
   if(!u) return "";
-  return '<img src="'+esc(u)+'" alt="" onerror="this.style.display=\'none\'">';
+  window.__sigURL=u;
+  return '<img src="'+esc(u)+'" alt="" onload="sigOK()" onerror="sigFail(this)">';
 }
 
 function render(D){
   const g=i=>D[i]!==undefined?D[i]:"";
   const cliente=g(0), fecha=fechaFmt(g(1)), firma=g(2);
+  /* estado limpio en cada render (importante al cambiar el #hash sin recargar) */
+  window.__sigOK=null; window.__sigURL="";
+  const _w=document.getElementById('sigwarn'); if(_w){_w.style.display='none';_w.innerHTML='';}
 
   /* la firma y la fecha se repiten en los dos bloques, como en el original */
   const signBlock =
@@ -235,9 +277,23 @@ function showDebug(D){
   const box=document.createElement("pre");
   box.style.cssText="white-space:pre-wrap;word-break:break-all;font:11px/1.4 monospace;"+
     "background:#222;color:#ddd;padding:12px;margin:14px auto;max-width:8.5in;overflow:auto";
-  box.textContent="DIAGNOSTICO\nCampos recibidos: "+(D?D.length:0)+" (se esperan 8)\nSeparador: ^\n\n"+
+  const firma=(D&&D[2]||"").trim();
+  let estado;
+  if(!firma) estado="VACIO -> el campo 2 llego sin nada. Revisa la expresion de la accion.";
+  else if(!/^https?:\/\//i.test(firma)) estado="NO ES URL -> llego texto, no un enlace: revisa el CONCATENATE.";
+  else estado="URL presente -> esperando a la imagen...";
+  box.textContent="DIAGNOSTICO\nCampos recibidos: "+(D?D.length:0)+" (se esperan 8)\n"+
+    "Separador: ^\nFirma: "+estado+"\n\n"+
     N.map((n,i)=>i+" "+n+": "+((D&&D[i])?D[i]:"·")).join("\n");
   document.body.appendChild(box);
+  if(firma){
+    setTimeout(()=>{
+      const r = window.__sigOK===true  ? "CARGO CORRECTAMENTE"
+              : window.__sigOK===false ? "FALLO (401/403 o URL invalida). Abre la URL de arriba en una pestana nueva para ver el error exacto."
+              : "sin respuesta todavia";
+      box.textContent=box.textContent.replace("URL presente -> esperando a la imagen...","URL presente -> "+r);
+    },2500);
+  }
 }
 
 (function(){
