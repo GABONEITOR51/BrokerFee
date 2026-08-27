@@ -181,9 +181,23 @@ function sigFail(img){
   const w=document.getElementById('sigwarn');
   if(w){
     w.style.display='block';
-    w.innerHTML='<b>La firma no se pudo cargar.</b> El documento se imprimirá con la '+
-      'línea en blanco para firmar a mano. Causa típica: la URL exige sesión de AppSheet '+
-      'en este navegador (error 401/403).<br><code>'+esc(window.__sigURL)+'</code>';
+    const u=window.__sigURL;
+    let causa;
+    if(/appName=NombreApp-1234567/i.test(u)){
+      causa='<b>Falta reemplazar el nombre de la app.</b> La URL todavía trae el texto de '+
+            'ejemplo <code>NombreApp-1234567</code>. Sustitúyelo en la expresión de la acción '+
+            'por el nombre real de tu app <u>con su sufijo numérico</u>.';
+    } else if(/appName=(&|$)/i.test(u)){
+      causa='<b>El parámetro appName llegó vacío.</b> Revisa el CONCATENATE de la acción.';
+    } else if(/fileName=(&|$)/i.test(u)){
+      causa='<b>El parámetro fileName llegó vacío.</b> La columna [Firma] está vacía en este registro.';
+    } else {
+      causa='<b>La URL parece correcta pero el servidor la rechazó.</b> Causa típica: exige '+
+            'sesión de AppSheet en este navegador (401/403). Ábrela en una pestaña nueva '+
+            'para ver el error exacto.';
+    }
+    w.innerHTML='<b>La firma no se pudo cargar.</b> El documento se imprimirá con la línea '+
+      'en blanco para firmar a mano.<br>'+causa+'<br><code>'+esc(u)+'</code>';
   }
 }
 function sigOK(){ window.__sigOK=true; }
