@@ -33,9 +33,12 @@
   .client{margin:3px 0 4px}
   .client span{margin-right:20px;white-space:nowrap}
 
+  /* Campo rellenable. En NEGRITA cuando lo llena la app, para distinguir de un
+     vistazo lo automático de lo que se escribe a mano sobre la línea en blanco. */
   .f{
     display:inline-block;min-width:110px;padding:0 4px;
     border-bottom:1px solid #000;text-align:center;line-height:1.05;
+    font-weight:bold;
   }
   .f.w{min-width:210px}
   .f.s{min-width:70px}
@@ -53,7 +56,7 @@
     max-height:34px;max-width:70%;object-fit:contain;
   }
   .sign .ln .typed{
-    position:absolute;left:10px;bottom:2px;font-size:13px;
+    position:absolute;left:10px;bottom:2px;font-size:13px;font-weight:bold;
   }
 
   /* aviso solo en pantalla: nunca se imprime */
