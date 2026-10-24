@@ -4,10 +4,14 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Broker Disclosure · Oxnard Insurance Agency</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
-  :root{ --fs:10px; --lh:1.3; }
+  :root{ --fs:10px; --lh:1.3; --accent:#1c3f6e; --ok:#2f6b46; --seal:#8C2F1E; }
   *{box-sizing:border-box}
   html,body{margin:0;padding:0}
+  [hidden]{display:none !important}
   body{
     background:#e9e9e9;color:#000;
     font-family:"Times New Roman",Times,serif;
@@ -20,6 +24,9 @@
     padding:0.4in 0.45in;
     box-shadow:0 2px 10px rgba(0,0,0,.15);
   }
+  /* al generar el PDF la hoja se fija a tamaño carta, aunque se esté en celular */
+  .sheet.capture{width:8.5in;max-width:none;margin:0;box-shadow:none}
+
   h1{
     font-size:12.5px;text-align:center;text-transform:uppercase;
     font-weight:bold;margin:0 0 4px;padding-bottom:2px;
@@ -33,8 +40,7 @@
   .client{margin:3px 0 4px}
   .client span{margin-right:20px;white-space:nowrap}
 
-  /* Campo rellenable. En NEGRITA cuando lo llena la app, para distinguir de un
-     vistazo lo automático de lo que se escribe a mano sobre la línea en blanco. */
+  /* Campo rellenable: en negrita cuando lo llena la app */
   .f{
     display:inline-block;min-width:110px;padding:0 4px;
     border-bottom:1px solid #000;text-align:center;line-height:1.05;
@@ -50,24 +56,59 @@
   .sign{display:grid;grid-template-columns:1.5fr 1fr;gap:26px;margin-top:18px}
   .sign .ln{border-bottom:1px solid #000;height:19px;position:relative}
   .sign .lb{font-size:9px;margin-top:2px}
-  /* firma dibujada: se apoya sobre la línea, sin empujar el maquetado */
   .sign .ln img{
     position:absolute;left:10px;bottom:1px;
     max-height:34px;max-width:70%;object-fit:contain;
   }
-  .sign .ln .typed{
-    position:absolute;left:10px;bottom:2px;font-size:13px;font-weight:bold;
-  }
+  .sign .ln .typed{position:absolute;left:10px;bottom:2px;font-size:13px;font-weight:bold}
 
-  /* aviso solo en pantalla: nunca se imprime */
-  #sigwarn{
-    display:none;max-width:8.5in;margin:14px auto 0;
-    background:#FBEDE9;border-left:4px solid #8C2F1E;
-    padding:10px 14px;font:13px/1.45 "Segoe UI",Arial,sans-serif;color:#5c2116;
+  /* constancia de la firma electrónica (va en el PDF) */
+  .audit{margin-top:12px;padding-top:4px;border-top:1px dotted #777;font:8px/1.35 Arial,sans-serif;color:#444}
+
+  /* ---------- panel de firma (solo pantalla, nunca va en el PDF) ---------- */
+  .panel{
+    max-width:8.5in;margin:14px auto 0;background:#fff;border-radius:8px;
+    box-shadow:0 2px 10px rgba(0,0,0,.15);padding:16px 18px;
+    font:15px/1.45 "Segoe UI",system-ui,Arial,sans-serif;color:#222;
+    display:flex;flex-direction:column;gap:12px;
   }
-  #sigwarn b{color:#8C2F1E}
-  #sigwarn code{font:11px/1.4 monospace;word-break:break-all;color:#333}
-  @media print{ #sigwarn{display:none !important} }
+  .panel h2{margin:0;font-size:17px}
+  .panel .meta{font-size:13px;color:#666}
+  .consent{display:flex;gap:10px;align-items:flex-start;font-size:14px;background:#f4f6fa;border:1px solid #d5dbe6;border-radius:6px;padding:10px 12px;cursor:pointer}
+  .consent input{width:22px;height:22px;margin:1px 0 0;flex:none;accent-color:var(--accent)}
+  .padwrap{position:relative;background:#fff;border:2px dashed #b9c2d0;border-radius:8px;overflow:hidden}
+  .padwrap.off{opacity:.45;pointer-events:none}
+  #pad{display:block;width:100%;height:auto;touch-action:none;cursor:crosshair}
+  .padline{position:absolute;left:6%;right:6%;bottom:26%;border-bottom:1px solid #cfd5df;pointer-events:none}
+  .padtag{position:absolute;left:6%;bottom:calc(26% - 22px);font-size:12px;color:#9aa3b2;letter-spacing:.06em;text-transform:uppercase;pointer-events:none}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+  .btn{
+    font:600 15px/1.2 "Segoe UI",system-ui,Arial,sans-serif;padding:10px 16px;border-radius:6px;
+    border:1px solid #c9ced8;background:#f3f4f6;color:#222;cursor:pointer;
+  }
+  .btn:disabled{opacity:.45;cursor:not-allowed}
+  .btn.big{min-height:64px;font-size:18px;flex:1}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+  .btn.ok{background:var(--ok);border-color:var(--ok);color:#fff}
+  .status{font-size:13px;color:#666;min-height:18px}
+  .status.err{color:var(--seal)} .status.on{color:var(--ok)}
+  details.cfg{font-size:13px;color:#555}
+  details.cfg summary{cursor:pointer}
+  details.cfg label{display:block;font-size:12px;margin:8px 0 3px;color:#666}
+  details.cfg input{width:100%;padding:6px 8px;border:1px solid #ccc;border-radius:5px;font:12px monospace}
+  .legal{font-size:12px;color:#777}
+
+  .modal{position:fixed;inset:0;background:rgba(0,0,0,.55);display:grid;place-items:center;padding:16px;z-index:20}
+  .sheetm{background:#fff;border-radius:8px;max-width:520px;width:100%;padding:18px;font:14px/1.45 "Segoe UI",Arial,sans-serif;display:flex;flex-direction:column;gap:10px}
+  .sheetm h3{margin:0;font-size:17px}
+  .kv{font:12px monospace;word-break:break-all;background:#f4f4f4;padding:6px 8px;border-radius:4px}
+
+  .toast{
+    position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:#222;color:#fff;
+    padding:10px 16px;border-radius:6px;font:14px "Segoe UI",Arial,sans-serif;opacity:0;pointer-events:none;
+    transition:opacity .18s;max-width:90vw;text-align:center;z-index:30;
+  }
+  .toast.on{opacity:1}
 
   .print-btn{
     position:fixed;right:18px;bottom:18px;z-index:9;
@@ -79,146 +120,166 @@
   @media print{
     body{background:#fff}
     .sheet{margin:0;box-shadow:none;width:100%;padding:0}
-    /* aviso solo en pantalla: nunca se imprime */
-  #sigwarn{
-    display:none;max-width:8.5in;margin:14px auto 0;
-    background:#FBEDE9;border-left:4px solid #8C2F1E;
-    padding:10px 14px;font:13px/1.45 "Segoe UI",Arial,sans-serif;color:#5c2116;
-  }
-  #sigwarn b{color:#8C2F1E}
-  #sigwarn code{font:11px/1.4 monospace;word-break:break-all;color:#333}
-  @media print{ #sigwarn{display:none !important} }
-
-  .print-btn{display:none}
+    .panel,.print-btn,.toast,.modal{display:none !important}
     li,.sign{break-inside:avoid}
   }
 </style>
 </head>
 <body>
+
 <div id="doc"></div>
-<div id="sigwarn"></div>
-<button class="print-btn" onclick="window.print()">Print</button>
+
+<!-- Panel de firma: aparece solo cuando la liga trae ?orden= -->
+<div class="panel" id="panel" hidden>
+  <h2>Firma del Broker Fee</h2>
+  <div class="meta" id="panelMeta"></div>
+
+  <label class="consent">
+    <input type="checkbox" id="consent">
+    <span>Acepto firmar este documento de forma electrónica y que mi firma electrónica tenga la misma validez que mi firma a mano. /
+    I agree to sign this document electronically.</span>
+  </label>
+
+  <div class="padwrap off" id="padwrap">
+    <canvas id="pad" width="1600" height="480"></canvas>
+    <div class="padline"></div>
+    <span class="padtag" id="padtag">Primero marca la casilla de arriba</span>
+  </div>
+
+  <div class="row">
+    <button class="btn" id="padUndo">Deshacer</button>
+    <button class="btn" id="padClear">Borrar firma</button>
+  </div>
+
+  <div class="row">
+    <button class="btn ok big" id="useBtn" disabled>📝 Firmar documento</button>
+    <button class="btn primary big" id="saveBtn" disabled>💾 Guardar en AppSheet</button>
+  </div>
+  <div class="status" id="status"></div>
+
+  <div class="row">
+    <button class="btn" id="dlBtn" disabled>Descargar PDF</button>
+  </div>
+
+  <details class="cfg">
+    <summary>Opciones avanzadas (administrador)</summary>
+    <label for="cfgClient">OAuth Client ID</label>
+    <input id="cfgClient" autocomplete="off" spellcheck="false">
+    <label for="cfgFiles">Carpeta DetalleOrden_Files_ (ID de Drive)</label>
+    <input id="cfgFiles" autocomplete="off" spellcheck="false">
+    <label for="cfgSheet">Hoja de cálculo CCIAPP (ID)</label>
+    <input id="cfgSheet" autocomplete="off" spellcheck="false">
+    <label for="cfgTab">Pestaña de la tabla</label>
+    <input id="cfgTab" autocomplete="off" spellcheck="false">
+    <label for="cfgCol">Columna del archivo</label>
+    <input id="cfgCol" autocomplete="off" spellcheck="false">
+    <div class="row" style="margin-top:10px"><button class="btn" id="cfgSave">Guardar configuración</button></div>
+    <p>Se guarda solo en este navegador (es la misma configuración que usa Firma en PDF).</p>
+  </details>
+
+  <p class="legal">La validez de la firma electrónica depende de las leyes aplicables (ESIGN/UETA). Esta página no guarda nada por sí misma: el PDF solo se guarda al oprimir "Guardar en AppSheet", en el Drive de la agencia.</p>
+</div>
+
+<button class="print-btn" id="printBtn" onclick="window.print()">Print</button>
+
+<div class="modal" id="saveModal" hidden>
+  <div class="sheetm">
+    <h3>Guardar en AppSheet</h3>
+    <div>Se va a crear este archivo en Drive y se va a poner en la columna <b id="mCol"></b> de la orden <b id="mOrden"></b>:</div>
+    <div class="kv" id="mFile"></div>
+    <div id="mPrev"></div>
+    <div class="row" style="justify-content:flex-end">
+      <button class="btn" id="mCancel">Cancelar</button>
+      <button class="btn primary" id="mOk">Sí, guardar</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
 <script>
 /* =====================================================================
-   CONTRATO DE DATOS · AppSheet · tabla CLIENTES
-   URL:  broker-disclosure.html?p=1#d=<ENCODEURL(payload)>
+   CONTRATO DE DATOS · AppSheet
+   URL:  .../BrokerFee/?orden=<ID de DetalleOrden>#d=<ENCODEURL(payload)>
    payload = 8 campos separados por  ^  (acento circunflejo)
 
-     0  cliente        [completo]                        (requerido)
-     1  fecha          [Poliza_Inicio]  ->  Date         (requerido)
-                       Llega MM/DD/YYYY o YYYY-MM-DD y se imprime  Ago/27/2026
-     2  firmaURL       URL pública de la imagen [Firma]  (opcional)
-     3  feeInicial     Broker fee inicial  · Disclosure punto 3    (opcional)
-     4  feeBroker      Broker fee acuerdo  · Fee Agreement punto 5 (opcional)
-     5  servicioAdic   Servicio adicional  · punto 6               (opcional)
-     6  montoAdic      Monto adicional     · punto 6               (opcional)
-     7  feeTerceros    Fees de terceros    · punto 7               (opcional)
+     0  cliente        (requerido)
+     1  fecha          Poliza_Inicio · MM/DD/YYYY o YYYY-MM-DD -> se imprime Ago/27/2026
+     2  (ya no se usa) antes era la URL de la firma de AppSheet; se deja el lugar
+                       para no mover los demás campos
+     3  feeInicial     Broker fee inicial  · Disclosure punto 3
+     4  feeBroker      Broker fee acuerdo  · Fee Agreement punto 5
+     5  servicioAdic   Servicio adicional  · punto 6
+     6  montoAdic      Monto adicional     · punto 6
+     7  feeTerceros    Fees de terceros    · punto 7
 
-   Todo campo vacío se imprime como línea en blanco para llenar a mano.
-   La licencia CDI 0F74214 va fija en el HTML (constante LICENCIA).
-
-   ?p=1  -> abre e imprime automáticamente
-   ?dbg=1 -> muestra el diagnóstico de los campos recibidos
+   ?orden=ID  -> modo firma: el cliente firma aquí y se guarda en [⚫BrokerFee]
+   ?p=1       -> (sin orden) abre e imprime automáticamente, como antes
+   ?dbg=1     -> muestra el diagnóstico de los campos recibidos
    ===================================================================== */
 const LICENCIA = "0F74214";
-const F='^';
+const F = '^';
 const DEMO = ["","","","","","","",""];
 
+/* ---------------------------- lectura de datos ---------------------------- */
 function smartDecode(raw){
-  let s=raw;
-  try{ s=decodeURIComponent(raw); }catch(e){ s=raw; }
-  /* Segundo decode SOLO si el primero no reveló el separador (doble encode).
-     Si ya hay "^" no se vuelve a decodificar: así el %2F del nombre de archivo
-     de la firma llega intacto al servidor de AppSheet. */
-  if(s.indexOf(F)===-1 && /%[0-9A-Fa-f]{2}/.test(s)){
-    try{ s=decodeURIComponent(s); }catch(e){}
+  let s = raw;
+  try{ s = decodeURIComponent(raw); }catch(e){ s = raw; }
+  if (s.indexOf(F) === -1 && /%[0-9A-Fa-f]{2}/.test(s)){
+    try{ s = decodeURIComponent(s); }catch(e){}
   }
   return s;
 }
 function readPayload(){
-  let raw="";
-  const h=location.hash||"";
-  if(h.indexOf("#d=")===0) raw=h.slice(3);
-  else if(new URLSearchParams(location.search).get("d")) raw=new URLSearchParams(location.search).get("d");
-  if(!raw) return null;
+  let raw = "";
+  const h = location.hash || "";
+  if (h.indexOf("#d=") === 0) raw = h.slice(3);
+  else if (new URLSearchParams(location.search).get("d")) raw = new URLSearchParams(location.search).get("d");
+  if (!raw) return null;
   return smartDecode(raw).split(F);
 }
-function esc(s){return (s==null?"":""+s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c]));}
-function fld(v,cls){
-  const s=(v==null?"":""+v).trim();
+function esc(s){ return (s==null?"":""+s).replace(/[&<>"]/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c])); }
+function fld(v, cls){
+  const s = (v==null?"":""+v).trim();
   return '<span class="f '+(cls||"")+(s?"":" empty")+'">'+(s?esc(s):"&nbsp;")+'</span>';
 }
 function money(v){
-  const s=(v==null?"":""+v).trim();
-  if(!s) return "";
-  const n=parseFloat(s.replace(/[^0-9.\-]/g,""));
-  if(isNaN(n)) return s;
+  const s = (v==null?"":""+v).trim();
+  if (!s) return "";
+  const n = parseFloat(s.replace(/[^0-9.\-]/g,""));
+  if (isNaN(n)) return s;
   return n.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
 }
-/* Fecha -> Ago/27/2026  (mes abreviado en español).
-   Acepta lo que manda AppSheet: MM/DD/YYYY (locale US) o YYYY-MM-DD (ISO).
-   Si no reconoce el formato devuelve el texto tal cual, sin inventar nada. */
-const MESES=["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
+const MESES = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
 function fechaFmt(v){
-  const s=(v==null?"":""+v).trim();
-  if(!s) return "";
+  const s = (v==null?"":""+v).trim();
+  if (!s) return "";
   let y,m,d,mm;
-  if((mm=s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/)))      { y=+mm[1]; m=+mm[2]; d=+mm[3]; }
-  else if((mm=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/))){ m=+mm[1]; d=+mm[2]; y=+mm[3]; }
+  if ((mm = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/)))       { y=+mm[1]; m=+mm[2]; d=+mm[3]; }
+  else if ((mm = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/))) { m=+mm[1]; d=+mm[2]; y=+mm[3]; }
   else return s;
-  if(m<1||m>12||d<1||d>31) return s;
+  if (m<1||m>12||d<1||d>31) return s;
   return MESES[m-1]+"/"+(d<10?"0"+d:d)+"/"+y;
 }
-/* Imagen de la firma.
-   Si no carga, se oculta (la línea queda en blanco para firmar a mano) y se
-   levanta un aviso EN PANTALLA — nunca en el papel — para que en el mostrador
-   se note el problema en lugar de imprimir un documento sin firma en silencio. */
-window.__sigURL = "";
-window.__sigOK  = null;   // null = no se intentó, true = cargó, false = falló
-function sigFail(img){
-  img.style.display='none';
-  window.__sigOK=false;
-  const w=document.getElementById('sigwarn');
-  if(w){
-    w.style.display='block';
-    const u=window.__sigURL;
-    let causa;
-    if(/appName=NombreApp-1234567/i.test(u)){
-      causa='<b>Falta reemplazar el nombre de la app.</b> La URL todavía trae el texto de '+
-            'ejemplo <code>NombreApp-1234567</code>. Sustitúyelo en la expresión de la acción '+
-            'por el nombre real de tu app <u>con su sufijo numérico</u>.';
-    } else if(/appName=(&|$)/i.test(u)){
-      causa='<b>El parámetro appName llegó vacío.</b> Revisa el CONCATENATE de la acción.';
-    } else if(/fileName=(&|$)/i.test(u)){
-      causa='<b>El parámetro fileName llegó vacío.</b> La columna [Firma] está vacía en este registro.';
-    } else {
-      causa='<b>La URL parece correcta pero el servidor la rechazó.</b> Causa típica: exige '+
-            'sesión de AppSheet en este navegador (401/403). Ábrela en una pestaña nueva '+
-            'para ver el error exacto.';
-    }
-    w.innerHTML='<b>La firma no se pudo cargar.</b> El documento se imprimirá con la línea '+
-      'en blanco para firmar a mano.<br>'+causa+'<br><code>'+esc(u)+'</code>';
-  }
-}
-function sigOK(){ window.__sigOK=true; }
-function sigImg(url){
-  const u=(url==null?"":""+url).trim();
-  if(!u) return "";
-  window.__sigURL=u;
-  return '<img src="'+esc(u)+'" alt="" onload="sigOK()" onerror="sigFail(this)">';
-}
 
+/* ---------------------------- estado ---------------------------- */
+const ORDEN = (new URLSearchParams(location.search).get("orden") || "").trim().replace(/[^0-9a-zA-Z_-]/g,"");
+const S = {
+  D: null,
+  sigUrl: "",        // PNG de la firma colocada en el documento (data:)
+  signedAt: null,    // fecha y hora en que se colocó la firma
+  pdf: null          // Uint8Array del último PDF generado
+};
+
+/* ---------------------------- documento ---------------------------- */
 function render(D){
-  const g=i=>D[i]!==undefined?D[i]:"";
-  const cliente=g(0), fecha=fechaFmt(g(1)), firma=g(2);
-  /* estado limpio en cada render (importante al cambiar el #hash sin recargar) */
-  window.__sigOK=null; window.__sigURL="";
-  const _w=document.getElementById('sigwarn'); if(_w){_w.style.display='none';_w.innerHTML='';}
+  const g = i => D[i] !== undefined ? D[i] : "";
+  const cliente = g(0), fecha = fechaFmt(g(1));
+  const sig = S.sigUrl ? '<img src="'+S.sigUrl+'" alt="">' : '';
 
-  /* la firma y la fecha se repiten en los dos bloques, como en el original */
   const signBlock =
   '<div class="sign">'+
-    '<div><div class="ln">'+sigImg(firma)+'</div><div class="lb">Client Signature</div></div>'+
+    '<div><div class="ln">'+sig+'</div><div class="lb">Client Signature</div></div>'+
     '<div><div class="ln">'+(fecha?'<span class="typed">'+esc(fecha)+'</span>':'')+'</div>'+
       '<div class="lb">Date</div></div>'+
   '</div>'+
@@ -228,7 +289,7 @@ function render(D){
       '<div class="lb">Date</div></div>'+
   '</div>';
 
-  const disc=[
+  const disc = [
     ["I-","Do not sign any broker fee agreement unless all of its blank lines and spaces have been filled-in and you have read this entire document and the agreement carefully."],
     ["II-","Your insurance broker represents you, the consumer, and is entitled to charge a broker fee if he/she chooses. This fee is not set by law, and may be negotiable between you and the broker."],
     ["III-","It is illegal or improper for an insurance broker to charge you a fee for placing coverage solely with the California Automobile Assigned Risk Plan or the California FAIR Plan. Fees may be charged for placement of other coverages."],
@@ -237,11 +298,16 @@ function render(D){
     ["VI-","Your broker may receive commission from insurance company(ies) for placing your insurance. This commission may be paid to your broker by the insurance company(ies) in addition to any broker fee you pay."],
     ["VII-","If you will be paying your premium in installments to a finance company, by law you must receive a copy of a premium finance disclosure and agreement. Be sure to obtain and read those documents before signing a premium finance agreement. Also, ask the broker if the insurer offers its own installment payment plan. Insurer installment plans are often cheaper than premium financing through a separate premium finance company."],
     ["VIII-","If your broker is placing automobile coverage, your broker must provide you with a copy of the current Department of Insurance pamphlet Automobile Insurance. If your broker is placing residential coverage, your broker must provide you with a copy of the current Department of Insurance pamphlet Residential Insurance. By signing this disclosure you acknowledge receipt of the appropriate pamphlet(s)."]
-  ].map(d=>'<li>'+d[0]+' '+d[1]+'</li>').join("");
+  ].map(d => '<li>'+d[0]+' '+d[1]+'</li>').join("");
+
+  const audit = S.signedAt
+    ? '<div class="audit">Electronically signed by the client on '+esc(fmtStamp(S.signedAt))+
+      (ORDEN ? ' · Order '+esc(ORDEN) : '')+
+      ' · Client consented to sign electronically.</div>'
+    : '';
 
   document.getElementById("doc").innerHTML =
-  '<div class="sheet">'+
-
+  '<div class="sheet" id="sheet">'+
     '<h1>Disclosure of Broker Status</h1>'+
     '<div class="client">'+
       '<span><b>Client:</b> '+fld(cliente,"w")+'</span>'+
@@ -285,47 +351,345 @@ function render(D){
         'insurance: '+fld(g(7),"w")+'</li>'+
     '</ol>'+
     signBlock+
+    audit+
   '</div>';
 }
 
 function showDebug(D){
-  if(new URLSearchParams(location.search).get("dbg")!=="1") return;
-  const N=["cliente","fecha","firmaURL","feeInicial","feeBroker","servicioAdic","montoAdic","feeTerceros"];
-  const box=document.createElement("pre");
-  box.style.cssText="white-space:pre-wrap;word-break:break-all;font:11px/1.4 monospace;"+
+  if (new URLSearchParams(location.search).get("dbg") !== "1") return;
+  const N = ["cliente","fecha","(sin uso)","feeInicial","feeBroker","servicioAdic","montoAdic","feeTerceros"];
+  const box = document.createElement("pre");
+  box.style.cssText = "white-space:pre-wrap;word-break:break-all;font:11px/1.4 monospace;"+
     "background:#222;color:#ddd;padding:12px;margin:14px auto;max-width:8.5in;overflow:auto";
-  const firma=(D&&D[2]||"").trim();
-  let estado;
-  if(!firma) estado="VACIO -> el campo 2 llego sin nada. Revisa la expresion de la accion.";
-  else if(!/^https?:\/\//i.test(firma)) estado="NO ES URL -> llego texto, no un enlace: revisa el CONCATENATE.";
-  else estado="URL presente -> esperando a la imagen...";
-  box.textContent="DIAGNOSTICO\nCampos recibidos: "+(D?D.length:0)+" (se esperan 8)\n"+
-    "Separador: ^\nFirma: "+estado+"\n\n"+
-    N.map((n,i)=>i+" "+n+": "+((D&&D[i])?D[i]:"·")).join("\n");
+  box.textContent = "DIAGNOSTICO\nOrden: "+(ORDEN||"(sin ?orden=)")+"\nCampos recibidos: "+(D?D.length:0)+" (se esperan 8)\n\n"+
+    N.map((n,i) => i+" "+n+": "+((D&&D[i])?D[i]:"·")).join("\n");
   document.body.appendChild(box);
-  if(firma){
-    setTimeout(()=>{
-      const r = window.__sigOK===true  ? "CARGO CORRECTAMENTE"
-              : window.__sigOK===false ? "FALLO (401/403 o URL invalida). Abre la URL de arriba en una pestana nueva para ver el error exacto."
-              : "sin respuesta todavia";
-      box.textContent=box.textContent.replace("URL presente -> esperando a la imagen...","URL presente -> "+r);
-    },2500);
+}
+
+/* ---------------------------- utilidades ---------------------------- */
+const $ = id => document.getElementById(id);
+function toast(msg, ms){
+  const t = $("toast"); t.textContent = msg; t.classList.add("on");
+  clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove("on"), ms || 2800);
+}
+function status(msg, kind){ const el = $("status"); el.className = "status" + (kind ? " "+kind : ""); el.textContent = msg; }
+function fmtStamp(d){
+  return d.toLocaleString("en-US", { timeZone:"America/Los_Angeles", month:"2-digit", day:"2-digit", year:"numeric",
+    hour:"numeric", minute:"2-digit", second:"2-digit" }) + " (Pacific Time)";
+}
+function hhmmssUTC(d){ // AppSheet nombra sus archivos con la hora UTC
+  const p = n => (n<10?"0":"")+n;
+  return p(d.getUTCHours()) + p(d.getUTCMinutes()) + p(d.getUTCSeconds());
+}
+
+/* ---------------------------- pad de firma ---------------------------- */
+const PAD = { strokes: [], cur: null };
+function padRedraw(){
+  const c = $("pad"), x = c.getContext("2d");
+  x.clearRect(0, 0, c.width, c.height);
+  x.lineCap = "round"; x.lineJoin = "round"; x.strokeStyle = "#0f1418"; x.fillStyle = "#0f1418";
+  PAD.strokes.forEach(s => {
+    x.lineWidth = s.w; x.beginPath();
+    if (s.p.length === 1){ x.arc(s.p[0][0], s.p[0][1], s.w/2, 0, Math.PI*2); x.fill(); return; }
+    x.moveTo(s.p[0][0], s.p[0][1]);
+    for (let i = 1; i < s.p.length; i++){
+      const q = s.p[i-1], p = s.p[i];
+      x.quadraticCurveTo(q[0], q[1], (q[0]+p[0])/2, (q[1]+p[1])/2);
+    }
+    x.stroke();
+  });
+  $("useBtn").disabled = !PAD.strokes.length || !$("consent").checked;
+}
+function padPos(ev){
+  const c = $("pad"), r = c.getBoundingClientRect();
+  return [ (ev.clientX - r.left) * (c.width / r.width), (ev.clientY - r.top) * (c.height / r.height) ];
+}
+// recorta el espacio vacío alrededor del trazo para que la firma llene su línea
+function trimmedSignature(){
+  const c = $("pad"), w = c.width, h = c.height;
+  const d = c.getContext("2d").getImageData(0, 0, w, h).data;
+  let minX = w, minY = h, maxX = -1, maxY = -1;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++){
+    if (d[(y*w + x)*4 + 3] > 10){
+      if (x < minX) minX = x; if (x > maxX) maxX = x;
+      if (y < minY) minY = y; if (y > maxY) maxY = y;
+    }
+  }
+  if (maxX < 0) return null;
+  const m = 12, sx = Math.max(0, minX-m), sy = Math.max(0, minY-m);
+  const cw = Math.min(w, maxX+1+m) - sx, ch = Math.min(h, maxY+1+m) - sy;
+  const o = document.createElement("canvas"); o.width = cw; o.height = ch;
+  o.getContext("2d").drawImage(c, sx, sy, cw, ch, 0, 0, cw, ch);
+  return o.toDataURL("image/png");
+}
+function initPad(){
+  const c = $("pad");
+  c.addEventListener("pointerdown", ev => {
+    if (!$("consent").checked) return;
+    ev.preventDefault(); c.setPointerCapture(ev.pointerId);
+    PAD.cur = { w: 9, p: [padPos(ev)] }; PAD.strokes.push(PAD.cur); padRedraw();
+  });
+  c.addEventListener("pointermove", ev => { if (!PAD.cur) return; ev.preventDefault(); PAD.cur.p.push(padPos(ev)); padRedraw(); });
+  ["pointerup","pointercancel","pointerleave"].forEach(t => c.addEventListener(t, () => { PAD.cur = null; }));
+
+  $("consent").addEventListener("change", function(){
+    $("padwrap").classList.toggle("off", !this.checked);
+    $("padtag").textContent = this.checked ? "Firme aquí / Sign here" : "Primero marca la casilla de arriba";
+    padRedraw();
+  });
+  $("padUndo").addEventListener("click", () => { PAD.strokes.pop(); PAD.cur = null; padRedraw(); });
+  $("padClear").addEventListener("click", () => {
+    PAD.strokes = []; PAD.cur = null; padRedraw();
+    // al borrar la firma también se quita del documento
+    S.sigUrl = ""; S.signedAt = null; S.pdf = null; render(S.D); syncButtons();
+  });
+
+  $("useBtn").addEventListener("click", () => {
+    if (!$("consent").checked){ toast("Falta marcar la casilla de consentimiento."); return; }
+    const url = trimmedSignature();
+    if (!url){ toast("Dibuja la firma antes de firmar el documento."); return; }
+    S.sigUrl = url; S.signedAt = new Date(); S.pdf = null;
+    render(S.D); syncButtons();
+    status("Documento firmado " + fmtStamp(S.signedAt) + ". Revisa y oprime Guardar en AppSheet.", "on");
+    const im = document.querySelector(".sign .ln img");
+    if (im) im.scrollIntoView({ behavior:"smooth", block:"center" });
+  });
+}
+function syncButtons(){
+  const firmado = !!S.sigUrl;
+  $("saveBtn").disabled = !firmado || !ORDEN;
+  $("dlBtn").disabled = !firmado;
+}
+
+/* ---------------------------- PDF ---------------------------- */
+async function buildPdf(){
+  const sheet = $("sheet");
+  sheet.classList.add("capture");
+  try {
+    const canvas = await html2canvas(sheet, { scale: 2.5, backgroundColor: "#ffffff", useCORS: true, windowWidth: 1000 });
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF({ unit: "pt", format: "letter", orientation: "portrait" });
+    const PW = 612, PH = 792;
+    const imgH = canvas.height * PW / canvas.width;
+    if (imgH <= PH + 1){
+      pdf.addImage(canvas.toDataURL("image/jpeg", 0.92), "JPEG", 0, 0, PW, imgH);
+    } else {
+      // por si el contenido pasa de una hoja: se corta en páginas carta
+      const pagePx = Math.floor(canvas.width * PH / PW);
+      for (let y = 0, n = 0; y < canvas.height; y += pagePx, n++){
+        const hh = Math.min(pagePx, canvas.height - y);
+        const part = document.createElement("canvas"); part.width = canvas.width; part.height = hh;
+        const px = part.getContext("2d"); px.fillStyle = "#fff"; px.fillRect(0, 0, part.width, hh);
+        px.drawImage(canvas, 0, y, canvas.width, hh, 0, 0, canvas.width, hh);
+        if (n) pdf.addPage();
+        pdf.addImage(part.toDataURL("image/jpeg", 0.92), "JPEG", 0, 0, PW, hh * PW / canvas.width);
+      }
+    }
+    pdf.setProperties({ title: "Broker Fee " + (ORDEN || ""), subject: "Broker Disclosure / Fee Agreement", creator: "805 MultiServices" });
+    return new Uint8Array(pdf.output("arraybuffer"));
+  } finally {
+    sheet.classList.remove("capture");
   }
 }
 
-(function(){
-  const D=readPayload();
-  render(D||DEMO);
-  showDebug(D);
-  if(new URLSearchParams(location.search).get("p")==="1"){
-    /* espera a que cargue la firma antes de mandar a imprimir */
-    const img=document.querySelector(".sign .ln img");
-    const go=()=>setTimeout(()=>window.print(),300);
-    if(img && !img.complete){ img.onload=go; img.onerror=go; setTimeout(go,3000); }
-    else go();
+/* ---------------------------- Google ---------------------------- */
+const CFG = {
+  clientId:  localStorage.getItem("fp_client_id")    || "635469391741-36kpb08t2k0db0qd4kko6ksi4duqq60h.apps.googleusercontent.com",
+  filesFolder: localStorage.getItem("fp_files_folder") || "1iThIZ1q2Q0Jx6YaojoHJL-ONDik-rNHE",
+  sheetId:   localStorage.getItem("bf_sheet_id")      || "13n14htWYPBgfzNOSfCzOKrFITxStsiURs3l-EPbVDpY",
+  tab:       localStorage.getItem("bf_tab")           || "DetalleOrden",
+  col:       localStorage.getItem("bf_col")           || "⚫BrokerFee",
+  token: null, tokenClient: null
+};
+const SCOPE = "https://www.googleapis.com/auth/drive";   // también sirve para la Sheets API
+
+function gisReady(){ return !!(window.google && google.accounts && google.accounts.oauth2); }
+function auth(){
+  return new Promise((resolve, reject) => {
+    if (!CFG.clientId){ reject(new Error("Falta el OAuth Client ID (Opciones avanzadas).")); return; }
+    if (!gisReady()){ reject(new Error("No cargó la librería de Google. Revisa tu conexión.")); return; }
+    if (CFG.token){ resolve(CFG.token); return; }
+    if (!CFG.tokenClient || CFG.tokenClient._cid !== CFG.clientId){
+      CFG.tokenClient = google.accounts.oauth2.initTokenClient({ client_id: CFG.clientId, scope: SCOPE, callback: () => {} });
+      CFG.tokenClient._cid = CFG.clientId;
+    }
+    CFG.tokenClient.callback = resp => {
+      if (resp && resp.access_token){
+        CFG.token = resp.access_token;
+        setTimeout(() => { CFG.token = null; }, ((resp.expires_in || 3600) - 60) * 1000);
+        resolve(CFG.token);
+      } else reject(new Error("No se recibió el permiso de Google."));
+    };
+    CFG.tokenClient.error_callback = err => {
+      const t = err && err.type;
+      if (t === "popup_closed") reject(new Error("Cerraste la ventana de Google."));
+      else if (t === "popup_failed_to_open") reject(new Error("El navegador bloqueó la ventana de Google. Permite las ventanas emergentes de este sitio."));
+      else reject(new Error("Google no autorizó" + (t ? " (" + t + ")" : "") + "."));
+    };
+    CFG.tokenClient.requestAccessToken({ prompt: "" });
+  });
+}
+async function gfetch(url, opts){
+  opts = opts || {};
+  opts.headers = Object.assign({}, opts.headers || {}, { Authorization: "Bearer " + (await auth()) });
+  let r = await fetch(url, opts);
+  if (r.status === 401){
+    CFG.token = null;
+    opts.headers.Authorization = "Bearer " + (await auth());
+    r = await fetch(url, opts);
   }
+  if (!r.ok){
+    let txt = ""; try { txt = (await r.json()).error.message; } catch(e){}
+    if (/sheets\.googleapis/.test(url) && /has not been used|is disabled/i.test(txt))
+      txt = "Falta activar la Google Sheets API en el proyecto de Google Cloud.";
+    throw new Error("Google respondió " + r.status + (txt ? ": " + txt : ""));
+  }
+  return r;
+}
+function colLetter(i){ // 0 -> A
+  let s = ""; i++;
+  while (i > 0){ const m = (i - 1) % 26; s = String.fromCharCode(65 + m) + s; i = Math.floor((i - 1) / 26); }
+  return s;
+}
+function rng(a1){ return encodeURIComponent("'" + CFG.tab.replace(/'/g, "''") + "'!" + a1); }
+const SH = () => "https://sheets.googleapis.com/v4/spreadsheets/" + CFG.sheetId;
+
+// localiza la fila de la orden y la columna [⚫BrokerFee] en la hoja
+async function findCell(){
+  const hdr = await (await gfetch(SH() + "/values/" + rng("1:1"))).json();
+  const heads = ((hdr.values || [])[0] || []).map(h => String(h).trim());
+  const ci = heads.indexOf(CFG.col.trim());
+  if (ci < 0) throw new Error('No encontré la columna "' + CFG.col + '" en la pestaña ' + CFG.tab + ".");
+
+  // la llave suele ser la columna A; si no está ahí, se prueba en las columnas que empiezan con "ID"
+  const candidatos = [0].concat(heads.map((h, i) => /^id/i.test(h) && i !== 0 ? i : -1).filter(i => i > 0));
+  for (const k of candidatos){
+    const L = colLetter(k);
+    const col = await (await gfetch(SH() + "/values/" + rng(L + ":" + L))).json();
+    const vals = (col.values || []).map(r => String(r[0] || "").trim());
+    const hits = [];
+    vals.forEach((v, i) => { if (i > 0 && v === ORDEN) hits.push(i + 1); });
+    if (hits.length > 1) throw new Error("La orden " + ORDEN + " aparece " + hits.length + " veces en la columna " + heads[k] + ". No guardé nada.");
+    if (hits.length === 1){
+      const cell = colLetter(ci) + hits[0];
+      const cur = await (await gfetch(SH() + "/values/" + rng(cell))).json();
+      return { cell, keyCol: heads[k], current: ((cur.values || [])[0] || [])[0] || "" };
+    }
+  }
+  throw new Error("No encontré la orden " + ORDEN + " en la pestaña " + CFG.tab + ".");
+}
+
+async function uploadPdf(bytes, name){
+  const meta = { name, mimeType: "application/pdf", parents: [CFG.filesFolder] };
+  const form = new FormData();
+  form.append("metadata", new Blob([JSON.stringify(meta)], { type: "application/json" }));
+  form.append("file", new Blob([bytes], { type: "application/pdf" }));
+  const r = await gfetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name", { method: "POST", body: form });
+  return await r.json();
+}
+async function writeCell(cell, value){
+  await gfetch(SH() + "/values/" + rng(cell) + "?valueInputOption=RAW", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ values: [[value]] })
+  });
+}
+
+/* ---------------------------- guardar ---------------------------- */
+let PENDING = null;
+
+async function prepararGuardado(){
+  const b = $("saveBtn");
+  b.disabled = true; b.textContent = "Preparando…";
+  try {
+    status("Generando el PDF…");
+    S.pdf = await buildPdf();
+    status("Buscando la orden en AppSheet…");
+    const where = await findCell();
+    const name = ORDEN + "." + CFG.col + "." + hhmmssUTC(new Date()) + ".pdf";
+    PENDING = { where, name };
+    $("mCol").textContent = "[" + CFG.col + "]";
+    $("mOrden").textContent = ORDEN;
+    $("mFile").textContent = "DetalleOrden_Files_/" + name;
+    $("mPrev").innerHTML = where.current
+      ? '<div style="color:#8C2F1E">Esa columna ya tiene un archivo: <span class="kv">' + esc(where.current) +
+        '</span><br>Se reemplaza en la columna; el archivo anterior se queda en Drive.</div>'
+      : "";
+    $("saveModal").hidden = false;
+    status("");
+  } catch(err){
+    status(err.message || "No se pudo preparar el guardado.", "err");
+  }
+  b.textContent = "💾 Guardar en AppSheet"; syncButtons();
+}
+
+async function confirmarGuardado(){
+  const ok = $("mOk");
+  ok.disabled = true; ok.textContent = "Guardando…";
+  try {
+    const f = await uploadPdf(S.pdf, PENDING.name);
+    // la carpeta de la ruta se toma del nombre real en Drive por si cambia el prefijo
+    const ruta = "DetalleOrden_Files_/" + f.name;
+    await writeCell(PENDING.where.cell, ruta);
+    $("saveModal").hidden = true;
+    status("Guardado en AppSheet: " + ruta + ". Sincroniza la app para verlo.", "on");
+    toast("Broker Fee guardado en la orden " + ORDEN + ".", 4000);
+    $("saveBtn").textContent = "✓ Guardado";
+  } catch(err){
+    status(err.message || "No se pudo guardar.", "err");
+    toast("No se pudo guardar: " + (err.message || "error"), 5000);
+  }
+  ok.disabled = false; ok.textContent = "Sí, guardar";
+}
+
+/* ---------------------------- arranque ---------------------------- */
+(function(){
+  const D = readPayload();
+  S.D = D || DEMO;
+  render(S.D);
+  showDebug(D);
+
+  if (ORDEN){
+    // modo firma
+    $("panel").hidden = false;
+    $("printBtn").hidden = true;
+    $("panelMeta").textContent = "Orden " + ORDEN + (D && D[0] ? " · " + D[0] : "");
+    if (!D) status("La liga no trae los datos del cliente (#d=…). El documento sale con líneas en blanco.", "err");
+    initPad(); padRedraw(); syncButtons();
+
+    $("cfgClient").value = CFG.clientId; $("cfgFiles").value = CFG.filesFolder;
+    $("cfgSheet").value = CFG.sheetId; $("cfgTab").value = CFG.tab; $("cfgCol").value = CFG.col;
+    $("cfgSave").addEventListener("click", () => {
+      CFG.clientId = $("cfgClient").value.trim(); CFG.filesFolder = $("cfgFiles").value.trim();
+      CFG.sheetId = $("cfgSheet").value.trim(); CFG.tab = $("cfgTab").value.trim(); CFG.col = $("cfgCol").value.trim();
+      localStorage.setItem("fp_client_id", CFG.clientId); localStorage.setItem("fp_files_folder", CFG.filesFolder);
+      localStorage.setItem("bf_sheet_id", CFG.sheetId); localStorage.setItem("bf_tab", CFG.tab); localStorage.setItem("bf_col", CFG.col);
+      CFG.token = null; toast("Configuración guardada en este navegador.");
+    });
+
+    $("saveBtn").addEventListener("click", prepararGuardado);
+    $("mOk").addEventListener("click", confirmarGuardado);
+    $("mCancel").addEventListener("click", () => { $("saveModal").hidden = true; });
+    $("dlBtn").addEventListener("click", async () => {
+      try {
+        const bytes = await buildPdf();
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(new Blob([bytes], { type: "application/pdf" }));
+        a.download = "BrokerFee-" + (ORDEN || "firmado") + ".pdf";
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+      } catch(err){ toast("No pude generar el PDF: " + (err.message || "error"), 5000); }
+    });
+    window.addEventListener("beforeunload", ev => {
+      if (S.sigUrl && $("saveBtn").textContent.indexOf("Guardado") === -1){ ev.preventDefault(); ev.returnValue = ""; }
+    });
+    return;
+  }
+
+  // modo anterior: solo mostrar / imprimir
+  if (new URLSearchParams(location.search).get("p") === "1") setTimeout(() => window.print(), 300);
 })();
-window.addEventListener("hashchange",()=>{const D=readPayload(); if(D) render(D);});
+window.addEventListener("hashchange", () => { const D = readPayload(); if (D){ S.D = D; render(D); } });
 </script>
 </body>
 </html>
