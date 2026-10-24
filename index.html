@@ -97,6 +97,9 @@
   details.cfg label{display:block;font-size:12px;margin:8px 0 3px;color:#666}
   details.cfg input{width:100%;padding:6px 8px;border:1px solid #ccc;border-radius:5px;font:12px monospace}
   .legal{font-size:12px;color:#777}
+  .recibida{display:flex;flex-direction:column;gap:6px;background:#eef6f0;border:1px solid #b9d8c3;border-radius:8px;padding:10px 12px}
+  .recibida .lbl{font-size:13px;color:#2f6b46;font-weight:600}
+  .recibida img{max-height:90px;max-width:100%;object-fit:contain;background:#fff;border:1px solid #dfe5e1;border-radius:6px;align-self:flex-start;padding:4px 10px}
 
   .modal{position:fixed;inset:0;background:rgba(0,0,0,.55);display:grid;place-items:center;padding:16px;z-index:20}
   .sheetm{background:#fff;border-radius:8px;max-width:520px;width:100%;padding:18px;font:14px/1.45 "Segoe UI",Arial,sans-serif;display:flex;flex-direction:column;gap:10px}
@@ -140,6 +143,13 @@
     I agree to sign this document electronically.</span>
   </label>
 
+  <div class="recibida" id="recibida" hidden>
+    <span class="lbl">Firma que el cliente hizo en la póliza</span>
+    <img id="recibidaImg" alt="Firma del cliente">
+    <div class="row"><button class="btn" id="otraFirma">Dibujar otra firma</button></div>
+  </div>
+
+  <div id="padArea">
   <div class="padwrap off" id="padwrap">
     <canvas id="pad" width="1600" height="480"></canvas>
     <div class="padline"></div>
@@ -149,6 +159,7 @@
   <div class="row">
     <button class="btn" id="padUndo">Deshacer</button>
     <button class="btn" id="padClear">Borrar firma</button>
+  </div>
   </div>
 
   <div class="row">
@@ -268,7 +279,8 @@ const S = {
   D: null,
   sigUrl: "",        // PNG de la firma colocada en el documento (data:)
   signedAt: null,    // fecha y hora en que se colocó la firma
-  pdf: null          // Uint8Array del último PDF generado
+  pdf: null,         // Uint8Array del último PDF generado
+  firmaPoliza: ""    // firma recibida de Firma en PDF (data:), si la página se abrió desde ahí
 };
 
 /* ---------------------------- documento ---------------------------- */
@@ -303,6 +315,7 @@ function render(D){
   const audit = S.signedAt
     ? '<div class="audit">Electronically signed by the client on '+esc(fmtStamp(S.signedAt))+
       (ORDEN ? ' · Order '+esc(ORDEN) : '')+
+      (S.sigFrom === "poliza" ? ' · Signature drawn by the client during the policy signing for this order' : '')+
       ' · Client consented to sign electronically.</div>'
     : '';
 
@@ -398,12 +411,13 @@ function padRedraw(){
     }
     x.stroke();
   });
-  $("useBtn").disabled = !PAD.strokes.length || !$("consent").checked;
+  $("useBtn").disabled = !$("consent").checked || !(PAD.strokes.length || usarRecibida());
 }
 function padPos(ev){
   const c = $("pad"), r = c.getBoundingClientRect();
   return [ (ev.clientX - r.left) * (c.width / r.width), (ev.clientY - r.top) * (c.height / r.height) ];
 }
+function usarRecibida(){ return !!S.firmaPoliza && $("padArea").hidden; }
 // recorta el espacio vacío alrededor del trazo para que la firma llene su línea
 function trimmedSignature(){
   const c = $("pad"), w = c.width, h = c.height;
@@ -435,6 +449,7 @@ function initPad(){
   $("consent").addEventListener("change", function(){
     $("padwrap").classList.toggle("off", !this.checked);
     $("padtag").textContent = this.checked ? "Firme aquí / Sign here" : "Primero marca la casilla de arriba";
+    if (this.checked && usarRecibida()) status("Oprime Firmar documento para poner la firma en el Broker Fee.");
     padRedraw();
   });
   $("padUndo").addEventListener("click", () => { PAD.strokes.pop(); PAD.cur = null; padRedraw(); });
@@ -446,15 +461,52 @@ function initPad(){
 
   $("useBtn").addEventListener("click", () => {
     if (!$("consent").checked){ toast("Falta marcar la casilla de consentimiento."); return; }
-    const url = trimmedSignature();
+    const url = usarRecibida() ? S.firmaPoliza : trimmedSignature();
     if (!url){ toast("Dibuja la firma antes de firmar el documento."); return; }
     S.sigUrl = url; S.signedAt = new Date(); S.pdf = null;
+    S.sigFrom = usarRecibida() ? "poliza" : "pad";
     render(S.D); syncButtons();
     status("Documento firmado " + fmtStamp(S.signedAt) + ". Revisa y oprime Guardar en AppSheet.", "on");
     const im = document.querySelector(".sign .ln img");
     if (im) im.scrollIntoView({ behavior:"smooth", block:"center" });
   });
 }
+// Firma en PDF abre esta página con ?firma=poliza y nos pasa la firma (mismo sitio, sin guardarla en ningún lado)
+function pedirFirmaPoliza(){
+  const q = new URLSearchParams(location.search);
+  if (q.get("firma") !== "poliza" || !window.opener) return;
+  const tgt = location.origin === "null" ? "*" : location.origin;
+  window.addEventListener("message", ev => {
+    if (ev.source !== window.opener || ev.origin !== location.origin) return;
+    const m = ev.data || {};
+    if (m.type !== "bf-firma" || !/^data:image\/png;base64,/.test(m.png || "")) return;
+    S.firmaPoliza = m.png;
+    $("recibidaImg").src = m.png;
+    $("recibida").hidden = false;
+    $("padArea").hidden = true;
+    padRedraw();
+    status("Se recibió la firma del cliente. Marca la casilla de consentimiento y oprime Firmar documento.");
+  });
+  let n = 0;
+  (function ping(){
+    if (S.firmaPoliza || n++ > 20) {
+      if (!S.firmaPoliza) status("No llegó la firma de la póliza. Puedes dibujarla aquí.", "err");
+      return;
+    }
+    try { window.opener.postMessage({ type: "bf-ready" }, tgt); } catch(e){}
+    setTimeout(ping, 300);
+  })();
+  $("otraFirma").addEventListener("click", () => {
+    $("padArea").hidden = false; $("recibida").hidden = true;
+    S.firmaPoliza = ""; padRedraw();
+  });
+}
+function avisarGuardado(name){
+  try {
+    if (window.opener) window.opener.postMessage({ type: "bf-saved", name: name }, location.origin === "null" ? "*" : location.origin);
+  } catch(e){}
+}
+
 function syncButtons(){
   const firmado = !!S.sigUrl;
   $("saveBtn").disabled = !firmado || !ORDEN;
@@ -635,6 +687,7 @@ async function confirmarGuardado(){
     status("Guardado en AppSheet: " + ruta + ". Sincroniza la app para verlo.", "on");
     toast("Broker Fee guardado en la orden " + ORDEN + ".", 4000);
     $("saveBtn").textContent = "✓ Guardado";
+    avisarGuardado(f.name);
   } catch(err){
     status(err.message || "No se pudo guardar.", "err");
     toast("No se pudo guardar: " + (err.message || "error"), 5000);
@@ -656,6 +709,7 @@ async function confirmarGuardado(){
     $("panelMeta").textContent = "Orden " + ORDEN + (D && D[0] ? " · " + D[0] : "");
     if (!D) status("La liga no trae los datos del cliente (#d=…). El documento sale con líneas en blanco.", "err");
     initPad(); padRedraw(); syncButtons();
+    pedirFirmaPoliza();
 
     $("cfgClient").value = CFG.clientId; $("cfgFiles").value = CFG.filesFolder;
     $("cfgSheet").value = CFG.sheetId; $("cfgTab").value = CFG.tab; $("cfgCol").value = CFG.col;
