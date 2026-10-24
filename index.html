@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Broker Disclosure · Oxnard Insurance Agency</title>
+<title>Broker Disclosure · 805 MultiServices</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
@@ -136,6 +136,9 @@
 <div class="panel" id="panel" hidden>
   <h2>Firma del Broker Fee</h2>
   <div class="meta" id="panelMeta"></div>
+  <div class="row" id="cargarRow" hidden>
+    <button class="btn primary" id="cargarBtn">Cargar nombre y fecha de la orden</button>
+  </div>
 
   <label class="consent">
     <input type="checkbox" id="consent">
@@ -228,7 +231,11 @@
    ?p=1       -> (sin orden) abre e imprime automáticamente, como antes
    ?dbg=1     -> muestra el diagnóstico de los campos recibidos
    ===================================================================== */
-const LICENCIA = "0F74214";
+/* Agencia y licencia que aparecen en el documento.
+   Cuando 805 MultiServices LLC tenga su licencia de entidad del CDI, cambiar aquí LICENCIATARIO y LICENCIA. */
+const AGENCIA       = "805 MULTISERVICES";
+const LICENCIATARIO = "ADRIANA PEREZ";   // titular de la licencia
+const LICENCIA      = "4363392";
 const F = '^';
 const DEMO = ["","","","","","","",""];
 
@@ -326,17 +333,17 @@ function render(D){
       '<span><b>Client:</b> '+fld(cliente,"w")+'</span>'+
       '<span><b>Date:</b> '+fld(fecha,"s")+'</span>'+
     '</div>'+
-    '<p>OXNARD INSURANCE AGENCY, pursuant to the requirements of California Insurance Code Section 1623, '+
+    '<p>'+esc(AGENCIA)+', pursuant to the requirements of California Insurance Code Section 1623, '+
       'hereby discloses to the undersigned Client that:</p>'+
     '<ol>'+
-      '<li>1. OXNARD INSURANCE AGENCY is transacting insurance on behalf of the client.</li>'+
-      '<li>2. OXNARD INSURANCE AGENCY will make a reasonable search of the marketplace of insurers known to '+
-        'Oxnard Insurance Agency to insure the type of risk that insurer wishes to insure, and to recommend '+
+      '<li>1. '+esc(AGENCIA)+' is transacting insurance on behalf of the client.</li>'+
+      '<li>2. '+esc(AGENCIA)+' will make a reasonable search of the marketplace of insurers known to '+
+        esc(AGENCIA)+' to insure the type of risk that insurer wishes to insure, and to recommend '+
         'one or more of such based on price, coverage, payment terms requested by client.</li>'+
       '<li>3. The amount of broker fees that will be charged is $'+fld(money(g(3)),"s")+' initially, plus any '+
         'additional services as may be required and agreed upon per the attached schedule or by further '+
         'written agreement signed by Client.</li>'+
-      '<li>4. OXNARD INSURANCE AGENCY discloses that he/she/it may also receive compensation from the insurer '+
+      '<li>4. '+esc(AGENCIA)+' discloses that he/she/it may also receive compensation from the insurer '+
         'selected by the customer, directly or indirectly, as a consequence of this transaction.</li>'+
     '</ol>'+
     signBlock+
@@ -348,7 +355,7 @@ function render(D){
 
     '<h1 class="mt">Standard Broker Fee Agreement</h1>'+
     '<ol>'+
-      '<li>1. The parties to this agreement are '+fld(cliente,"w")+' and OXNARD INSURANCE AGENCY, California '+
+      '<li>1. The parties to this agreement are '+fld(cliente,"w")+' and '+esc(AGENCIA)+' ('+esc(LICENCIATARIO)+'), California '+
         'Department of Insurance License Number '+esc(LICENCIA)+' "BROKER".</li>'+
       '<li>2. CLIENT appoints BROKER as CLIENT\'S insurance broker of record.</li>'+
       '<li>3. This agreement shall become operative on '+fld(fecha,"s")+' and shall continue in full '+
@@ -480,6 +487,8 @@ function pedirFirmaPoliza(){
     if (ev.source !== window.opener || ev.origin !== location.origin) return;
     const m = ev.data || {};
     if (m.type !== "bf-firma" || !/^data:image\/png;base64,/.test(m.png || "")) return;
+    if (m.datos) aplicarDatos(m.datos);
+    else if (!(S.D && S.D[0])) { $("cargarRow").hidden = false; }
     S.firmaPoliza = m.png;
     $("recibidaImg").src = m.png;
     $("recibida").hidden = false;
@@ -489,7 +498,7 @@ function pedirFirmaPoliza(){
   });
   let n = 0;
   (function ping(){
-    if (S.firmaPoliza || n++ > 20) {
+    if (S.firmaPoliza || n++ > 50) {
       if (!S.firmaPoliza) status("No llegó la firma de la póliza. Puedes dibujarla aquí.", "err");
       return;
     }
@@ -551,12 +560,14 @@ const CFG = {
   sheetId:   localStorage.getItem("bf_sheet_id")      || "13n14htWYPBgfzNOSfCzOKrFITxStsiURs3l-EPbVDpY",
   tab:       localStorage.getItem("bf_tab")           || "DetalleOrden",
   col:       localStorage.getItem("bf_col")           || "⚫BrokerFee",
+  colNombre: localStorage.getItem("bf_col_nombre")    || "NomCliente",
+  colFecha:  localStorage.getItem("bf_col_fecha")     || "Poliza_Inicio",
   token: null, tokenClient: null
 };
 const SCOPE = "https://www.googleapis.com/auth/drive";   // también sirve para la Sheets API
 
 function gisReady(){ return !!(window.google && google.accounts && google.accounts.oauth2); }
-function auth(){
+function auth(mode){   // mode "silent" = sin ventana (solo si ya hay sesión y permiso)
   return new Promise((resolve, reject) => {
     if (!CFG.clientId){ reject(new Error("Falta el OAuth Client ID (Opciones avanzadas).")); return; }
     if (!gisReady()){ reject(new Error("No cargó la librería de Google. Revisa tu conexión.")); return; }
@@ -578,7 +589,7 @@ function auth(){
       else if (t === "popup_failed_to_open") reject(new Error("El navegador bloqueó la ventana de Google. Permite las ventanas emergentes de este sitio."));
       else reject(new Error("Google no autorizó" + (t ? " (" + t + ")" : "") + "."));
     };
-    CFG.tokenClient.requestAccessToken({ prompt: "" });
+    CFG.tokenClient.requestAccessToken({ prompt: mode === "silent" ? "none" : "" });
   });
 }
 async function gfetch(url, opts){
@@ -629,6 +640,56 @@ async function findCell(){
     }
   }
   throw new Error("No encontré la orden " + ORDEN + " en la pestaña " + CFG.tab + ".");
+}
+
+// Lee [NomCliente] y [Poliza_Inicio] de la fila de la orden. Las fechas llegan como número
+// de serie de Sheets y se pasan a MM/DD/YYYY (no depende del formato regional de la hoja).
+async function leerDatosOrden(){
+  const hdr = await (await gfetch(SH() + "/values/" + rng("1:1"))).json();
+  const heads = ((hdr.values || [])[0] || []).map(h => String(h).trim());
+  const cand = [0].concat(heads.map((h, i) => /^id/i.test(h) && i !== 0 ? i : -1).filter(i => i > 0));
+  let fila = 0;
+  for (const k of cand){
+    if (fila) break;
+    const L = colLetter(k);
+    const col = await (await gfetch(SH() + "/values/" + rng(L + ":" + L))).json();
+    (col.values || []).forEach((r, i) => { if (i > 0 && String(r[0] || "").trim() === ORDEN) fila = i + 1; });
+  }
+  if (!fila) throw new Error("No encontré la orden " + ORDEN + " en la pestaña " + CFG.tab + ".");
+  const last = colLetter(Math.max(heads.length - 1, 0));
+  const row = await (await gfetch(SH() + "/values/" + rng("A" + fila + ":" + last + fila) +
+    "?valueRenderOption=UNFORMATTED_VALUE&dateTimeRenderOption=SERIAL_NUMBER")).json();
+  const vals = (row.values || [])[0] || [];
+  const get = n => { const i = heads.indexOf(n); return i >= 0 && vals[i] != null ? vals[i] : ""; };
+  return { cliente: String(get(CFG.colNombre) || "").trim(), fecha: serialAFecha(get(CFG.colFecha)) };
+}
+function serialAFecha(v){
+  if (typeof v !== "number" || !isFinite(v) || v <= 0) return String(v || "").trim();
+  const d = new Date(Math.round((v - 25569) * 86400000));
+  const p = n => (n < 10 ? "0" : "") + n;
+  return p(d.getUTCMonth() + 1) + "/" + p(d.getUTCDate()) + "/" + d.getUTCFullYear();
+}
+// pone los datos de la hoja en el documento (la hoja manda sobre lo que venga en la liga)
+function aplicarDatos(datos){
+  if (!datos) return;
+  S.D = S.D.slice();
+  if (datos.cliente) S.D[0] = datos.cliente;
+  if (datos.fecha)   S.D[1] = datos.fecha;
+  render(S.D);
+  $("panelMeta").textContent = "Orden " + ORDEN + (S.D[0] ? " · " + S.D[0] : "");
+  $("cargarRow").hidden = true;
+}
+async function cargarDesdeHoja(mode){
+  try {
+    if (mode === "silent") await auth("silent");
+    status("Leyendo nombre y fecha de la orden…");
+    const d = await leerDatosOrden();
+    aplicarDatos(d);
+    status(d.cliente ? "Datos de la orden cargados." : "La orden no tiene nombre de cliente en [" + CFG.colNombre + "].", d.cliente ? "on" : "err");
+  } catch(err){
+    if (mode === "silent"){ $("cargarRow").hidden = false; status("Oprime el botón para cargar el nombre y la fecha de la orden."); }
+    else status(err.message || "No pude leer la orden.", "err");
+  }
 }
 
 async function uploadPdf(bytes, name){
@@ -710,6 +771,16 @@ async function confirmarGuardado(){
     if (!D) status("La liga no trae los datos del cliente (#d=…). El documento sale con líneas en blanco.", "err");
     initPad(); padRedraw(); syncButtons();
     pedirFirmaPoliza();
+    $("cargarBtn").addEventListener("click", () => cargarDesdeHoja());
+    if (new URLSearchParams(location.search).get("firma") !== "poliza"){
+      // abierta directo desde AppSheet: esperar a la librería de Google y leer la orden sin ventana
+      let t = 0;
+      (function esperar(){
+        if (gisReady()) return cargarDesdeHoja("silent");
+        if (++t > 40){ $("cargarRow").hidden = false; return; }
+        setTimeout(esperar, 250);
+      })();
+    }
 
     $("cfgClient").value = CFG.clientId; $("cfgFiles").value = CFG.filesFolder;
     $("cfgSheet").value = CFG.sheetId; $("cfgTab").value = CFG.tab; $("cfgCol").value = CFG.col;
