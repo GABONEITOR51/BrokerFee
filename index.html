@@ -291,6 +291,13 @@ const S = {
 };
 
 /* ---------------------------- documento ---------------------------- */
+// Vuelve a dibujar el documento sin que la vista brinque: el panel de firma se queda en su lugar.
+function renderQuieto(D){
+  const panel = document.getElementById("panel");
+  const antes = (panel && !panel.hidden) ? panel.getBoundingClientRect().top : null;
+  render(D);
+  if (antes !== null) window.scrollBy(0, panel.getBoundingClientRect().top - antes);
+}
 function render(D){
   const g = i => D[i] !== undefined ? D[i] : "";
   const cliente = g(0), fecha = fechaFmt(g(1));
@@ -463,7 +470,7 @@ function initPad(){
   $("padClear").addEventListener("click", () => {
     PAD.strokes = []; PAD.cur = null; padRedraw();
     // al borrar la firma también se quita del documento
-    S.sigUrl = ""; S.signedAt = null; S.pdf = null; render(S.D); syncButtons();
+    S.sigUrl = ""; S.signedAt = null; S.pdf = null; renderQuieto(S.D); syncButtons();
   });
 
   $("useBtn").addEventListener("click", () => {
@@ -472,10 +479,8 @@ function initPad(){
     if (!url){ toast("Dibuja la firma antes de firmar el documento."); return; }
     S.sigUrl = url; S.signedAt = new Date(); S.pdf = null;
     S.sigFrom = usarRecibida() ? "poliza" : "pad";
-    render(S.D); syncButtons();
+    renderQuieto(S.D); syncButtons();
     status("Documento firmado " + fmtStamp(S.signedAt) + ". Revisa y oprime Guardar en AppSheet.", "on");
-    const im = document.querySelector(".sign .ln img");
-    if (im) im.scrollIntoView({ behavior:"smooth", block:"center" });
   });
 }
 // Firma en PDF abre esta página con ?firma=poliza y nos pasa la firma (mismo sitio, sin guardarla en ningún lado)
@@ -675,7 +680,7 @@ function aplicarDatos(datos){
   S.D = S.D.slice();
   if (datos.cliente) S.D[0] = datos.cliente;
   if (datos.fecha)   S.D[1] = datos.fecha;
-  render(S.D);
+  renderQuieto(S.D);
   $("panelMeta").textContent = "Orden " + ORDEN + (S.D[0] ? " · " + S.D[0] : "");
   $("cargarRow").hidden = true;
 }
