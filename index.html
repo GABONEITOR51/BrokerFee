@@ -33,6 +33,7 @@
     border-bottom:1px solid #000;
   }
   h1.mt{margin-top:13px}
+  .encabezado{font-size:17px;font-weight:bold;text-align:center;letter-spacing:.04em;margin:0 0 8px}
   p{margin:0 0 4px;line-height:var(--lh);text-align:justify}
   ol{margin:0;padding:0;list-style:none}
   ol li{margin:0 0 3px;line-height:var(--lh);text-align:justify}
@@ -236,6 +237,7 @@
 const AGENCIA       = "805 MULTISERVICES";
 const LICENCIATARIO = "ADRIANA PEREZ";   // titular de la licencia
 const LICENCIA      = "4363392";
+const ENCABEZADO    = "805 MULTISERVICES LLC";   // título arriba del documento
 const F = '^';
 const DEMO = ["","","","","","","",""];
 
@@ -335,6 +337,7 @@ function render(D){
 
   document.getElementById("doc").innerHTML =
   '<div class="sheet" id="sheet">'+
+    '<div class="encabezado">'+esc(ENCABEZADO)+'</div>'+
     '<h1>Disclosure of Broker Status</h1>'+
     '<div class="client">'+
       '<span><b>Client:</b> '+fld(cliente,"w")+'</span>'+
