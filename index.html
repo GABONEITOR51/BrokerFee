@@ -91,6 +91,9 @@
   .btn.big{min-height:64px;font-size:18px;flex:1}
   .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
   .btn.ok{background:var(--ok);border-color:var(--ok);color:#fff}
+  /* ya guardado: letras verdes como el format rule "✅ Firmado" de AppSheet */
+  .btn.firmado,.btn.firmado:disabled{background:#fff;border:2px solid #2E7D32;color:#2E7D32;font-weight:700;opacity:1}
+  .btn.conf{min-width:170px;min-height:54px;font-size:17px}
   .status{font-size:13px;color:#666;min-height:18px}
   .status.err{color:var(--seal)} .status.on{color:var(--ok)}
   details.cfg{font-size:13px;color:#555}
@@ -141,12 +144,6 @@
     <button class="btn primary" id="cargarBtn">Cargar nombre y fecha de la orden</button>
   </div>
 
-  <label class="consent">
-    <input type="checkbox" id="consent">
-    <span>Acepto firmar este documento de forma electrónica y que mi firma electrónica tenga la misma validez que mi firma a mano. /
-    I agree to sign this document electronically.</span>
-  </label>
-
   <div class="recibida" id="recibida" hidden>
     <span class="lbl">Firma que el cliente hizo en la póliza</span>
     <img id="recibidaImg" alt="Firma del cliente">
@@ -154,10 +151,10 @@
   </div>
 
   <div id="padArea">
-  <div class="padwrap off" id="padwrap">
+  <div class="padwrap" id="padwrap">
     <canvas id="pad" width="1600" height="480"></canvas>
     <div class="padline"></div>
-    <span class="padtag" id="padtag">Primero marca la casilla de arriba</span>
+    <span class="padtag" id="padtag">Firme aquí / Sign here</span>
   </div>
 
   <div class="row">
@@ -165,6 +162,12 @@
     <button class="btn" id="padClear">Borrar firma</button>
   </div>
   </div>
+
+  <label class="consent">
+    <input type="checkbox" id="consent">
+    <span>Acepto firmar este documento de forma electrónica y que mi firma electrónica tenga la misma validez que mi firma a mano. /
+    I agree to sign this document electronically.</span>
+  </label>
 
   <div class="row">
     <button class="btn ok big" id="useBtn" disabled>📝 Firmar documento</button>
@@ -203,9 +206,9 @@
     <div>Se va a crear este archivo en Drive y se va a poner en la columna <b id="mCol"></b> de la orden <b id="mOrden"></b>:</div>
     <div class="kv" id="mFile"></div>
     <div id="mPrev"></div>
-    <div class="row" style="justify-content:flex-end">
-      <button class="btn" id="mCancel">Cancelar</button>
-      <button class="btn primary" id="mOk">Sí, guardar</button>
+    <div class="row" style="justify-content:center;gap:14px">
+      <button class="btn conf" id="mCancel">Cancelar</button>
+      <button class="btn primary conf" id="mOk">Sí, guardar</button>
     </div>
   </div>
 </div>
@@ -456,7 +459,6 @@ function trimmedSignature(){
 function initPad(){
   const c = $("pad");
   c.addEventListener("pointerdown", ev => {
-    if (!$("consent").checked) return;
     ev.preventDefault(); c.setPointerCapture(ev.pointerId);
     PAD.cur = { w: 9, p: [padPos(ev)] }; PAD.strokes.push(PAD.cur); padRedraw();
   });
@@ -464,8 +466,6 @@ function initPad(){
   ["pointerup","pointercancel","pointerleave"].forEach(t => c.addEventListener(t, () => { PAD.cur = null; }));
 
   $("consent").addEventListener("change", function(){
-    $("padwrap").classList.toggle("off", !this.checked);
-    $("padtag").textContent = this.checked ? "Firme aquí / Sign here" : "Primero marca la casilla de arriba";
     if (this.checked && usarRecibida()) status("Oprime Firmar documento para poner la firma en el Broker Fee.");
     padRedraw();
   });
@@ -473,6 +473,7 @@ function initPad(){
   $("padClear").addEventListener("click", () => {
     PAD.strokes = []; PAD.cur = null; padRedraw();
     // al borrar la firma también se quita del documento
+    volverAGuardar();
     S.sigUrl = ""; S.signedAt = null; S.pdf = null; renderQuieto(S.D); syncButtons();
   });
 
@@ -480,6 +481,7 @@ function initPad(){
     if (!$("consent").checked){ toast("Falta marcar la casilla de consentimiento."); return; }
     const url = usarRecibida() ? S.firmaPoliza : trimmedSignature();
     if (!url){ toast("Dibuja la firma antes de firmar el documento."); return; }
+    volverAGuardar();
     S.sigUrl = url; S.signedAt = new Date(); S.pdf = null;
     S.sigFrom = usarRecibida() ? "poliza" : "pad";
     renderQuieto(S.D); syncButtons();
@@ -524,6 +526,12 @@ function avisarGuardado(name){
   } catch(e){}
 }
 
+function volverAGuardar(){
+  if (!S.guardado) return;
+  S.guardado = false;
+  const b = $("saveBtn");
+  b.textContent = "💾 Guardar en AppSheet"; b.classList.add("primary"); b.classList.remove("firmado");
+}
 function syncButtons(){
   const firmado = !!S.sigUrl;
   $("saveBtn").disabled = !firmado || !ORDEN;
@@ -741,7 +749,7 @@ async function prepararGuardado(){
   } catch(err){
     status(err.message || "No se pudo preparar el guardado.", "err");
   }
-  b.textContent = "💾 Guardar en AppSheet"; syncButtons();
+  b.textContent = S.guardado ? "✅ Firmado" : "💾 Guardar en AppSheet"; syncButtons();
 }
 
 async function confirmarGuardado(){
@@ -755,7 +763,9 @@ async function confirmarGuardado(){
     $("saveModal").hidden = true;
     status("Guardado en AppSheet: " + ruta + ". Sincroniza la app para verlo.", "on");
     toast("Broker Fee guardado en la orden " + ORDEN + ".", 4000);
-    $("saveBtn").textContent = "✓ Guardado";
+    S.guardado = true;
+    $("saveBtn").textContent = "✅ Firmado";
+    $("saveBtn").classList.remove("primary"); $("saveBtn").classList.add("firmado");
     avisarGuardado(f.name);
   } catch(err){
     status(err.message || "No se pudo guardar.", "err");
@@ -814,7 +824,7 @@ async function confirmarGuardado(){
       } catch(err){ toast("No pude generar el PDF: " + (err.message || "error"), 5000); }
     });
     window.addEventListener("beforeunload", ev => {
-      if (S.sigUrl && $("saveBtn").textContent.indexOf("Guardado") === -1){ ev.preventDefault(); ev.returnValue = ""; }
+      if (S.sigUrl && !S.guardado){ ev.preventDefault(); ev.returnValue = ""; }
     });
     return;
   }
