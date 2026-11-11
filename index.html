@@ -123,6 +123,12 @@
     padding:9px 18px;font:13px sans-serif;cursor:pointer;
   }
 
+  /* teléfono acostado: el recuadro de firma ocupa todo el alto y ancho de la pantalla */
+  @media (orientation: landscape) and (max-height: 520px){
+    .panel{max-width:none;margin:8px 0 0;border-radius:0;padding:8px 10px}
+    .padwrap{height:calc(100dvh - 16px)}
+    #pad{position:absolute;inset:0;width:100%;height:100%}
+  }
   @page{size:letter portrait;margin:0.4in}
   @media print{
     body{background:#fff}
@@ -170,8 +176,8 @@
   </label>
 
   <div class="row">
-    <button class="btn ok big" id="useBtn" disabled>📝 Firmar documento</button>
-    <button class="btn primary big" id="saveBtn" disabled>💾 Guardar en AppSheet</button>
+    <button class="btn ok big" id="useBtn" disabled>✅ Aceptar y guardar en AppSheet</button>
+    <button class="btn primary big" id="saveBtn" disabled hidden>💾 Guardar en AppSheet</button>
   </div>
   <div class="status" id="status"></div>
 
@@ -456,8 +462,37 @@ function trimmedSignature(){
   o.getContext("2d").drawImage(c, sx, sy, cw, ch, 0, 0, cw, ch);
   return o.toDataURL("image/png");
 }
+// Con el teléfono acostado el lienzo toma la forma del recuadro (ancho fijo de 1600, alto
+// proporcional) para que el trazo no se vea estirado. Al girar, la firma se reescala.
+const PAD_LAND = window.matchMedia("(orientation: landscape) and (max-height: 520px)");
+function padFit(){
+  const c = $("pad"), W = 1600;
+  let H = 480;
+  if (PAD_LAND.matches){
+    const r = c.parentNode.getBoundingClientRect();
+    if (r.width > 0 && r.height > 0) H = Math.max(200, Math.round(W * r.height / r.width));
+  }
+  if (c.width === W && c.height === H) return;
+  const sx = W / c.width, sy = H / c.height;
+  PAD.strokes.forEach(st => st.p.forEach(pt => { pt[0] *= sx; pt[1] *= sy; }));
+  c.width = W; c.height = H;
+  padRedraw();
+}
+let padFitT = null;
+function padFitLuego(girado){
+  clearTimeout(padFitT);
+  padFitT = setTimeout(() => {
+    padFit();
+    // al acostar el teléfono, el recuadro de firma queda a la vista
+    if (girado && PAD_LAND.matches && !$("padArea").hidden) $("padwrap").scrollIntoView({ block: "center" });
+  }, 150);
+}
 function initPad(){
   const c = $("pad");
+  window.addEventListener("resize", () => padFitLuego(false));
+  window.addEventListener("orientationchange", () => padFitLuego(true));
+  if (PAD_LAND.addEventListener) PAD_LAND.addEventListener("change", () => padFitLuego(true));
+  setTimeout(padFit, 0);
   c.addEventListener("pointerdown", ev => {
     ev.preventDefault(); c.setPointerCapture(ev.pointerId);
     PAD.cur = { w: 9, p: [padPos(ev)] }; PAD.strokes.push(PAD.cur); padRedraw();
@@ -466,7 +501,7 @@ function initPad(){
   ["pointerup","pointercancel","pointerleave"].forEach(t => c.addEventListener(t, () => { PAD.cur = null; }));
 
   $("consent").addEventListener("change", function(){
-    if (this.checked && usarRecibida()) status("Oprime Firmar documento para poner la firma en el Broker Fee.");
+    if (this.checked && usarRecibida()) status("Oprime Aceptar: se firma el Broker Fee y se guarda en AppSheet.");
     padRedraw();
   });
   $("padUndo").addEventListener("click", () => { PAD.strokes.pop(); PAD.cur = null; padRedraw(); });
@@ -477,15 +512,18 @@ function initPad(){
     S.sigUrl = ""; S.signedAt = null; S.pdf = null; renderQuieto(S.D); syncButtons();
   });
 
-  $("useBtn").addEventListener("click", () => {
+  // Un solo clic: pone la firma en el documento y lo guarda en AppSheet (sin ventana de confirmación)
+  $("useBtn").addEventListener("click", async () => {
+    if (S.guardando) return;
     if (!$("consent").checked){ toast("Falta marcar la casilla de consentimiento."); return; }
     const url = usarRecibida() ? S.firmaPoliza : trimmedSignature();
     if (!url){ toast("Dibuja la firma antes de firmar el documento."); return; }
+    if (S.guardado && url === S.guardadoSig){ toast("Este Broker Fee ya está guardado en AppSheet."); return; }
     volverAGuardar();
     S.sigUrl = url; S.signedAt = new Date(); S.pdf = null;
     S.sigFrom = usarRecibida() ? "poliza" : "pad";
     renderQuieto(S.D); syncButtons();
-    status("Documento firmado " + fmtStamp(S.signedAt) + ". Revisa y oprime Guardar en AppSheet.", "on");
+    await guardarDirecto();
   });
 }
 // Firma en PDF abre esta página con ?firma=poliza y nos pasa la firma (mismo sitio, sin guardarla en ningún lado)
@@ -504,7 +542,7 @@ function pedirFirmaPoliza(){
     $("recibida").hidden = false;
     $("padArea").hidden = true;
     padRedraw();
-    status("Se recibió la firma del cliente. Marca la casilla de consentimiento y oprime Firmar documento.");
+    status("Se recibió la firma del cliente. Marca la casilla de consentimiento y oprime Aceptar.");
   });
   let n = 0;
   (function ping(){
@@ -516,7 +554,7 @@ function pedirFirmaPoliza(){
     setTimeout(ping, 300);
   })();
   $("otraFirma").addEventListener("click", () => {
-    $("padArea").hidden = false; $("recibida").hidden = true;
+    $("padArea").hidden = false; $("recibida").hidden = true; padFit();
     S.firmaPoliza = ""; padRedraw();
   });
 }
@@ -528,9 +566,9 @@ function avisarGuardado(name){
 
 function volverAGuardar(){
   if (!S.guardado) return;
-  S.guardado = false;
-  const b = $("saveBtn");
-  b.textContent = "💾 Guardar en AppSheet"; b.classList.add("primary"); b.classList.remove("firmado");
+  S.guardado = false; S.guardadoSig = "";
+  const b = $("useBtn");
+  b.textContent = "✅ Aceptar y guardar en AppSheet"; b.classList.remove("firmado");
 }
 function syncButtons(){
   const firmado = !!S.sigUrl;
@@ -772,6 +810,32 @@ async function confirmarGuardado(){
     toast("No se pudo guardar: " + (err.message || "error"), 5000);
   }
   ok.disabled = false; ok.textContent = "Sí, guardar";
+}
+
+// Firma + guardado en un solo paso (lo usa el botón Aceptar)
+async function guardarDirecto(){
+  const b = $("useBtn");
+  S.guardando = true; b.disabled = true; b.textContent = "Guardando…";
+  try {
+    status("Generando el PDF…");
+    S.pdf = await buildPdf();
+    status("Guardando en AppSheet…");
+    const where = await findCell();
+    const name = ORDEN + "." + CFG.col + "." + hhmmssUTC(new Date()) + ".pdf";
+    const f = await uploadPdf(S.pdf, name);
+    const ruta = "DetalleOrden_Files_/" + f.name;
+    await writeCell(where.cell, ruta);
+    status("Guardado en AppSheet: " + ruta + ". Sincroniza la app para verlo.", "on");
+    toast("Broker Fee guardado en la orden " + ORDEN + ".", 4000);
+    S.guardado = true; S.guardadoSig = S.sigUrl;
+    b.textContent = "✅ Guardado en AppSheet"; b.classList.add("firmado");
+    avisarGuardado(f.name);
+  } catch(err){
+    status(err.message || "No se pudo guardar.", "err");
+    toast("No se pudo guardar: " + (err.message || "error") + ". Oprime Aceptar otra vez para reintentar.", 6000);
+    b.textContent = "✅ Aceptar y guardar en AppSheet";
+  }
+  S.guardando = false; padRedraw();
 }
 
 /* ---------------------------- arranque ---------------------------- */
