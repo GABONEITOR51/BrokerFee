@@ -76,6 +76,8 @@
   .panel h2{margin:0;font-size:17px}
   .panel.dock{margin-bottom:28px;align-items:stretch;text-align:center}
   .panel.dock #saveBtn{width:100%}
+  .okmsg{background:#E8F5E9;border:2px solid #2E7D32;color:#1B5E20;border-radius:8px;padding:16px 14px;font-size:20px;font-weight:700;line-height:1.3}
+  .okmsg small{display:block;font-size:14px;font-weight:500;margin-top:4px;color:#2E7D32}
   .panel .meta{font-size:13px;color:#666}
   .consent{display:flex;gap:10px;align-items:flex-start;font-size:14px;background:#f4f6fa;border:1px solid #d5dbe6;border-radius:6px;padding:10px 12px;cursor:pointer}
   .consent input{width:22px;height:22px;margin:1px 0 0;flex:none;accent-color:var(--accent)}
@@ -203,7 +205,8 @@
 
 <!-- Al final del documento: se guarda después de revisarlo (aparece al oprimir Aceptar) -->
 <div class="panel dock" id="saveDock" hidden>
-  <h2>¿Ya revisaste el documento?</h2>
+  <h2 id="dockTitle">¿Ya revisaste el documento?</h2>
+  <div class="okmsg" id="okMsg" role="status" hidden>✅ Documento subido correctamente a AppSheet<small>Document uploaded successfully</small></div>
   <button class="btn primary big" id="saveBtn" disabled>💾 Guardar en AppSheet</button>
   <div class="status" id="status2"></div>
   <div class="row">
@@ -577,6 +580,7 @@ function avisarGuardado(name){
 function volverAGuardar(){
   if (!S.guardado) return;
   S.guardado = false; S.guardadoSig = "";
+  $("okMsg").hidden = true; $("dockTitle").hidden = false;
   const b = $("saveBtn");
   b.textContent = "💾 Guardar en AppSheet"; b.classList.add("primary"); b.classList.remove("firmado");
 }
@@ -842,6 +846,9 @@ async function guardarDirecto(){
     toast("Broker Fee guardado en la orden " + ORDEN + ".", 4000);
     S.guardado = true; S.guardadoSig = S.sigUrl;
     b.textContent = "✅ Firmado"; b.classList.remove("primary"); b.classList.add("firmado");
+    // aviso grande para confirmarle al cliente que ya quedó subido
+    $("dockTitle").hidden = true; $("okMsg").hidden = false;
+    setTimeout(() => $("saveDock").scrollIntoView({ behavior: "smooth", block: "end" }), 60);
     avisarGuardado(f.name);
   } catch(err){
     status(err.message || "No se pudo guardar.", "err");
