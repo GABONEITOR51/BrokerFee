@@ -68,12 +68,14 @@
 
   /* ---------- panel de firma (solo pantalla, nunca va en el PDF) ---------- */
   .panel{
-    max-width:8.5in;margin:14px auto 0;background:#fff;border-radius:8px;
+    max-width:8.5in;margin:14px auto;background:#fff;border-radius:8px;
     box-shadow:0 2px 10px rgba(0,0,0,.15);padding:16px 18px;
     font:15px/1.45 "Segoe UI",system-ui,Arial,sans-serif;color:#222;
     display:flex;flex-direction:column;gap:12px;
   }
   .panel h2{margin:0;font-size:17px}
+  .panel.dock{margin-bottom:28px;align-items:stretch;text-align:center}
+  .panel.dock #saveBtn{width:100%}
   .panel .meta{font-size:13px;color:#666}
   .consent{display:flex;gap:10px;align-items:flex-start;font-size:14px;background:#f4f6fa;border:1px solid #d5dbe6;border-radius:6px;padding:10px 12px;cursor:pointer}
   .consent input{width:22px;height:22px;margin:1px 0 0;flex:none;accent-color:var(--accent)}
@@ -140,8 +142,6 @@
 </head>
 <body>
 
-<div id="doc"></div>
-
 <!-- Panel de firma: aparece solo cuando la liga trae ?orden= -->
 <div class="panel" id="panel" hidden>
   <h2>Firma del Broker Fee</h2>
@@ -176,14 +176,9 @@
   </label>
 
   <div class="row">
-    <button class="btn ok big" id="useBtn" disabled>✅ Aceptar y guardar en AppSheet</button>
-    <button class="btn primary big" id="saveBtn" disabled hidden>💾 Guardar en AppSheet</button>
+    <button class="btn ok big" id="useBtn" disabled>✅ Aceptar</button>
   </div>
   <div class="status" id="status"></div>
-
-  <div class="row">
-    <button class="btn" id="dlBtn" disabled>Descargar PDF</button>
-  </div>
 
   <details class="cfg">
     <summary>Opciones avanzadas (administrador)</summary>
@@ -202,6 +197,18 @@
   </details>
 
   <p class="legal">La validez de la firma electrónica depende de las leyes aplicables (ESIGN/UETA). Esta página no guarda nada por sí misma: el PDF solo se guarda al oprimir "Guardar en AppSheet", en el Drive de la agencia.</p>
+</div>
+
+<div id="doc"></div>
+
+<!-- Al final del documento: se guarda después de revisarlo (aparece al oprimir Aceptar) -->
+<div class="panel dock" id="saveDock" hidden>
+  <h2>¿Ya revisaste el documento?</h2>
+  <button class="btn primary big" id="saveBtn" disabled>💾 Guardar en AppSheet</button>
+  <div class="status" id="status2"></div>
+  <div class="row">
+    <button class="btn" id="dlBtn" disabled>Descargar PDF</button>
+  </div>
 </div>
 
 <button class="print-btn" id="printBtn" onclick="window.print()">Print</button>
@@ -411,7 +418,9 @@ function toast(msg, ms){
   const t = $("toast"); t.textContent = msg; t.classList.add("on");
   clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove("on"), ms || 2800);
 }
-function status(msg, kind){ const el = $("status"); el.className = "status" + (kind ? " "+kind : ""); el.textContent = msg; }
+function status(msg, kind){
+  ["status", "status2"].forEach(id => { const el = $(id); if (!el) return; el.className = "status" + (kind ? " "+kind : ""); el.textContent = msg; });
+}
 function fmtStamp(d){
   return d.toLocaleString("en-US", { timeZone:"America/Los_Angeles", month:"2-digit", day:"2-digit", year:"numeric",
     hour:"numeric", minute:"2-digit", second:"2-digit" }) + " (Pacific Time)";
@@ -501,7 +510,7 @@ function initPad(){
   ["pointerup","pointercancel","pointerleave"].forEach(t => c.addEventListener(t, () => { PAD.cur = null; }));
 
   $("consent").addEventListener("change", function(){
-    if (this.checked && usarRecibida()) status("Oprime Aceptar: se firma el Broker Fee y se guarda en AppSheet.");
+    if (this.checked && usarRecibida()) status("Oprime Aceptar para poner la firma en el Broker Fee.");
     padRedraw();
   });
   $("padUndo").addEventListener("click", () => { PAD.strokes.pop(); PAD.cur = null; padRedraw(); });
@@ -512,18 +521,19 @@ function initPad(){
     S.sigUrl = ""; S.signedAt = null; S.pdf = null; renderQuieto(S.D); syncButtons();
   });
 
-  // Un solo clic: pone la firma en el documento y lo guarda en AppSheet (sin ventana de confirmación)
-  $("useBtn").addEventListener("click", async () => {
+  // Aceptar: pone la firma en el documento y baja al final para revisarlo y guardar
+  $("useBtn").addEventListener("click", () => {
     if (S.guardando) return;
     if (!$("consent").checked){ toast("Falta marcar la casilla de consentimiento."); return; }
     const url = usarRecibida() ? S.firmaPoliza : trimmedSignature();
     if (!url){ toast("Dibuja la firma antes de firmar el documento."); return; }
-    if (S.guardado && url === S.guardadoSig){ toast("Este Broker Fee ya está guardado en AppSheet."); return; }
+    if (S.guardado && url === S.guardadoSig){ $("saveDock").scrollIntoView({ behavior: "smooth", block: "end" }); return; }
     volverAGuardar();
     S.sigUrl = url; S.signedAt = new Date(); S.pdf = null;
     S.sigFrom = usarRecibida() ? "poliza" : "pad";
     renderQuieto(S.D); syncButtons();
-    await guardarDirecto();
+    status("Documento firmado " + fmtStamp(S.signedAt) + ". Revísalo y oprime Guardar en AppSheet al final.", "on");
+    setTimeout(() => $("saveDock").scrollIntoView({ behavior: "smooth", block: "end" }), 60);
   });
 }
 // Firma en PDF abre esta página con ?firma=poliza y nos pasa la firma (mismo sitio, sin guardarla en ningún lado)
@@ -567,12 +577,13 @@ function avisarGuardado(name){
 function volverAGuardar(){
   if (!S.guardado) return;
   S.guardado = false; S.guardadoSig = "";
-  const b = $("useBtn");
-  b.textContent = "✅ Aceptar y guardar en AppSheet"; b.classList.remove("firmado");
+  const b = $("saveBtn");
+  b.textContent = "💾 Guardar en AppSheet"; b.classList.add("primary"); b.classList.remove("firmado");
 }
 function syncButtons(){
   const firmado = !!S.sigUrl;
-  $("saveBtn").disabled = !firmado || !ORDEN;
+  $("saveDock").hidden = !firmado || !ORDEN;
+  $("saveBtn").disabled = !firmado || !ORDEN || !!S.guardando;
   $("dlBtn").disabled = !firmado;
 }
 
@@ -814,7 +825,9 @@ async function confirmarGuardado(){
 
 // Firma + guardado en un solo paso (lo usa el botón Aceptar)
 async function guardarDirecto(){
-  const b = $("useBtn");
+  if (S.guardando) return;
+  if (S.guardado){ toast("Este Broker Fee ya está guardado en AppSheet."); return; }
+  const b = $("saveBtn");
   S.guardando = true; b.disabled = true; b.textContent = "Guardando…";
   try {
     status("Generando el PDF…");
@@ -828,14 +841,14 @@ async function guardarDirecto(){
     status("Guardado en AppSheet: " + ruta + ". Sincroniza la app para verlo.", "on");
     toast("Broker Fee guardado en la orden " + ORDEN + ".", 4000);
     S.guardado = true; S.guardadoSig = S.sigUrl;
-    b.textContent = "✅ Guardado en AppSheet"; b.classList.add("firmado");
+    b.textContent = "✅ Firmado"; b.classList.remove("primary"); b.classList.add("firmado");
     avisarGuardado(f.name);
   } catch(err){
     status(err.message || "No se pudo guardar.", "err");
-    toast("No se pudo guardar: " + (err.message || "error") + ". Oprime Aceptar otra vez para reintentar.", 6000);
-    b.textContent = "✅ Aceptar y guardar en AppSheet";
+    toast("No se pudo guardar: " + (err.message || "error") + ". Oprime Guardar otra vez para reintentar.", 6000);
+    b.textContent = "💾 Guardar en AppSheet";
   }
-  S.guardando = false; padRedraw();
+  S.guardando = false; syncButtons();
 }
 
 /* ---------------------------- arranque ---------------------------- */
@@ -874,7 +887,7 @@ async function guardarDirecto(){
       CFG.token = null; toast("Configuración guardada en este navegador.");
     });
 
-    $("saveBtn").addEventListener("click", prepararGuardado);
+    $("saveBtn").addEventListener("click", guardarDirecto);
     $("mOk").addEventListener("click", confirmarGuardado);
     $("mCancel").addEventListener("click", () => { $("saveModal").hidden = true; });
     $("dlBtn").addEventListener("click", async () => {
