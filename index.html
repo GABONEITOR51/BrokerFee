@@ -421,8 +421,10 @@ function toast(msg, ms){
   const t = $("toast"); t.textContent = msg; t.classList.add("on");
   clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove("on"), ms || 2800);
 }
-function status(msg, kind){
-  ["status", "status2"].forEach(id => { const el = $(id); if (!el) return; el.className = "status" + (kind ? " "+kind : ""); el.textContent = msg; });
+// soloAbajo: escribe solo en el aviso del final (mientras se guarda), para que el texto de
+// arriba no cambie de alto y la página no se mueva en el iPhone.
+function status(msg, kind, soloAbajo){
+  (soloAbajo ? ["status2"] : ["status", "status2"]).forEach(id => { const el = $(id); if (!el) return; el.className = "status" + (kind ? " "+kind : ""); el.textContent = msg; });
 }
 function fmtStamp(d){
   return d.toLocaleString("en-US", { timeZone:"America/Los_Angeles", month:"2-digit", day:"2-digit", year:"numeric",
@@ -594,9 +596,11 @@ function syncButtons(){
 /* ---------------------------- PDF ---------------------------- */
 async function buildPdf(){
   const sheet = $("sheet");
-  sheet.classList.add("capture");
   try {
-    const canvas = await html2canvas(sheet, { scale: 2.5, backgroundColor: "#ffffff", useCORS: true, windowWidth: 1000 });
+    // El tamaño carta se aplica solo en la copia que hace html2canvas: la página que ve
+    // el cliente no cambia de tamaño y no brinca mientras se genera el PDF.
+    const canvas = await html2canvas(sheet, { scale: 2.5, backgroundColor: "#ffffff", useCORS: true, windowWidth: 1000,
+      onclone: doc => { const c = doc.getElementById("sheet"); if (c) c.classList.add("capture"); } });
     const { jsPDF } = window.jspdf;
     const pdf = new jsPDF({ unit: "pt", format: "letter", orientation: "portrait" });
     const PW = 612, PH = 792;
@@ -618,7 +622,7 @@ async function buildPdf(){
     pdf.setProperties({ title: "Broker Fee " + (ORDEN || ""), subject: "Broker Disclosure / Fee Agreement", creator: "805 MultiServices" });
     return new Uint8Array(pdf.output("arraybuffer"));
   } finally {
-    sheet.classList.remove("capture");
+    sheet.classList.remove("capture");   // por si quedó de una versión anterior
   }
 }
 
@@ -834,24 +838,26 @@ async function guardarDirecto(){
   const b = $("saveBtn");
   S.guardando = true; b.disabled = true; b.textContent = "Guardando…";
   try {
-    status("Generando el PDF…");
+    status("Generando el PDF…", "", true);
     S.pdf = await buildPdf();
-    status("Guardando en AppSheet…");
+    status("Guardando en AppSheet…", "", true);
     const where = await findCell();
     const name = ORDEN + "." + CFG.col + "." + hhmmssUTC(new Date()) + ".pdf";
     const f = await uploadPdf(S.pdf, name);
     const ruta = "DetalleOrden_Files_/" + f.name;
     await writeCell(where.cell, ruta);
-    status("Guardado en AppSheet: " + ruta + ". Sincroniza la app para verlo.", "on");
+    status("Guardado en AppSheet: " + ruta + ". Sincroniza la app para verlo.", "on", true);
     toast("Broker Fee guardado en la orden " + ORDEN + ".", 4000);
     S.guardado = true; S.guardadoSig = S.sigUrl;
     b.textContent = "✅ Firmado"; b.classList.remove("primary"); b.classList.add("firmado");
     // aviso grande para confirmarle al cliente que ya quedó subido
     $("dockTitle").hidden = true; $("okMsg").hidden = false;
-    setTimeout(() => $("saveDock").scrollIntoView({ behavior: "smooth", block: "end" }), 60);
+    // el aviso queda donde está el botón; solo se acomoda si no se alcanza a ver completo
+    const r = $("okMsg").getBoundingClientRect();
+    if (r.top < 0 || r.bottom > window.innerHeight) $("okMsg").scrollIntoView({ behavior: "smooth", block: "nearest" });
     avisarGuardado(f.name);
   } catch(err){
-    status(err.message || "No se pudo guardar.", "err");
+    status(err.message || "No se pudo guardar.", "err", true);
     toast("No se pudo guardar: " + (err.message || "error") + ". Oprime Guardar otra vez para reintentar.", 6000);
     b.textContent = "💾 Guardar en AppSheet";
   }
